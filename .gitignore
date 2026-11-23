@@ -1,6 +1,42 @@
+# Local Hub state, service credentials and verification evidence
 .runtime/
-*.sqlite*
+/evidence/
 .env
+.env.*
+*.env
+.dev.vars
+.dev.vars.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
 
+# Local databases and journals
+*.sqlite*
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Only the two shipped example documents belong in Git
+/library-data/**
+!/library-data/shared/
+!/library-data/shared/社内規程/
+!/library-data/shared/社内規程/旅費規程.md
+!/library-data/teams/
+!/library-data/teams/営業企画部/
+!/library-data/teams/営業企画部/申請案内/
+!/library-data/teams/営業企画部/申請案内/出張精算の申請案内.md
+
+# Dependencies, local tooling and test output
 node_modules/
+.wrangler/
+__pycache__/
+*.py[cod]
+coverage/
+playwright-report/
+test-results/
+*.log
 .DS_Store
