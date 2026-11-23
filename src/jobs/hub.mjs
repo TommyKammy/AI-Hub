@@ -13,7 +13,7 @@ import { checkCsvColumns, recipeFromResult } from "../procedures/csv-skill.mjs";
 import {arrivalSpec,arrivalWait,canDisplayArrival,claimArrival,confirmArrivalSend,markArrivalStarted,migrateArrivalWaits,registerArrivalWait} from "./arrival-waits.mjs";
 import {answerSourceId,answerSources,inquiryVersions,migrateInquiries,parseInquiryDraft,resolutionCandidates} from "../inquiries/inquiries.mjs";
 import { current } from "../../skills/renewal-brief/releases.mjs";
-import { currentStandardProcedure, findStandardProcedureVersion, migrateStandardProcedures, standardProcedureVersion } from "../procedures/standard-procedures.mjs";
+import { executionWorkflow, currentStandardProcedure, findStandardProcedureVersion, migrateStandardProcedures, standardProcedureVersion } from "../procedures/standard-procedures.mjs";
 import { deliveredTo, draftForJob, formatSharedMemo, migrateProcedures, procedureVersion, quoteProcedure, resolvePublished } from "../procedures/procedures.mjs";
 import { assertDraftSources } from "./recurring-drafts.mjs";
 import { catalogProcedureReference, requireRevisionProcedure, resolveAppliedProcedure } from "../procedures/applied-procedure.mjs";
@@ -497,7 +497,7 @@ export function openHub(path) {
       }
       const templateRef=savedWorkflow ? savedWorkflow.id+":"+savedWorkflow.version : null;
       const standard=input.standard_workflow ?? savedWorkflow?.standard_workflow ?? null;
-      if (standard!==null && (!standardWorkflows.has(standard) || kind!=="assistant" || arrival || refs ||
+      if (standard!==null && (!standardWorkflows.has(executionWorkflow(db,standard)) || kind!=="assistant" || arrival || refs ||
           input.quote_skill_id || csvSkillId || (wantsLibraries && standard!=="source-answer")))
         throw new HubError(400,"この依頼で適用する手順を確認してください。");
       if (standard==="csv-summary" && (sources.length!==1 || !sources[0].attached || !/\.csv$/i.test(sources[0].title)))
@@ -792,7 +792,7 @@ export function openHub(path) {
           throw new HubError(400,"この相談の種類に合う手順を選んでください。");
         if (workflow!==null) {
           const sources=jobSources(j);
-          if (!standardWorkflows.has(workflow) || j.kind!=="assistant" || ticket!==null || input.line_index!=null ||
+          if (!standardWorkflows.has(executionWorkflow(db,workflow)) || j.kind!=="assistant" || ticket!==null || input.line_index!=null ||
               (j.library_selection && workflow!=="source-answer") ||
               (workflow==="csv-summary" && !sources.some(source=>source.attached && /\.csv$/i.test(source.title))) ||
               (workflow==="quote-comparison" && (sources.length!==2 || !sources.every(source=>source.attached))))
@@ -819,7 +819,7 @@ export function openHub(path) {
           ? db.prepare(`SELECT json_extract(result,'$.workflow.hash') AS hash FROM work_tool_results
               WHERE job=? AND json_extract(result,'$.tool')='aggregate_csv'`).get(id)?.hash : null;
         const standardHash=applied?.quoteSkill?.hash ?? applied?.standardHash ??
-          (workflow && (applied ? standardWorkflows.get(workflow).hash : currentStandardProcedure(db,workflow).hash)) ?? priorCsvHash ?? null;
+          (workflow && (applied ? standardWorkflows.get(executionWorkflow(db, workflow)).hash : currentStandardProcedure(db,workflow).hash)) ?? priorCsvHash ?? null;
         db.prepare(`INSERT INTO memo_versions(job_id,version,base,instruction,request_key,line_index,answer_inquiry,answer_round,standard_workflow,standard_hash,applied_procedure)
           VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(id,next,input.base,instruction,key,index,ticket,round,workflow,
             standardHash,snapshot && JSON.stringify(snapshot));
@@ -1387,9 +1387,9 @@ export function createWorker(db, call, runtimeForActor = () => null) {
               ...(j.csv_skill && j.phase==="compose" && {csv_skill:JSON.parse(j.csv_skill).name}),
               ...(j.library_selection && j.phase==="compose" && {libraries:JSON.parse(j.library_selection).map(l=>l.name)}),
               ...(j.library_automatic && j.phase==="compose" && {may_search_libraries:true}),
-              ...(j.standard_workflow && j.phase==="compose" && {standard_workflow:j.standard_workflow}),
+              ...(j.standard_workflow && j.phase==="compose" && {standard_workflow:executionWorkflow(db,j.standard_workflow)}),
               ...(j.kind === "assistant" && j.phase === "compose" && {work:db.prepare("SELECT ticket FROM work_tool_results WHERE job=?").get(j.id).ticket,passages:workPassages(sources)}),
-              ...(revisionTool && {work:revisionTool.ticket,passages:workPassages(sources), standard_workflow:edit.standard_workflow || "csv-summary",
+              ...(revisionTool && {work:revisionTool.ticket,passages:workPassages(sources), standard_workflow:executionWorkflow(db,edit.standard_workflow) || "csv-summary",
                 csv_previous_recipe:db.prepare(`SELECT t.result FROM work_tool_results t WHERE t.job=? AND t.result IS NOT NULL
                 UNION ALL SELECT r.result FROM revision_tool_results r WHERE r.job=? AND r.version=? AND r.result IS NOT NULL LIMIT 2`).all(j.id,j.id,edit.base)
                 .map(row=>JSON.parse(row.result).recipe).at(-1)}),

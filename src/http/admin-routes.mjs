@@ -9,7 +9,7 @@ import { adminAccount, adminAudit, adminAuditCsv, auditExportHistory, memberDire
 import { checkModelProfile, modelProfiles, saveModelProfile } from "../models/model-profiles.mjs";
 import { setStopped, readLog, reasonText } from "../operations.mjs";
 import { changeProcedureDelivery, previewProcedureDelivery, procedureAdministration, rollbackProcedure, reviewList, publishProcedure, previewRevision, publishRevision, revokeProcedure } from "../procedures/procedures.mjs";
-import { listStandardProcedures, saveStandardProcedure, standardProcedureAdministration } from "../procedures/standard-procedures.mjs";
+import { importIndustryProcedures, industryPackages, listStandardProcedures, saveStandardProcedure, standardProcedureAdministration } from "../procedures/standard-procedures.mjs";
 import { changeUsagePolicy, retentionEstimate, usagePolicy, usagePolicyHistory, usageSnapshot } from "../models/usage-policy.mjs";
 import { usageReport } from "../models/usage-report.mjs";
 
@@ -63,6 +63,10 @@ export function createAdminApi({ db, personal, runtimes, hermes, lookupReceipt, 
     { path: /^models\/(?<kind>usage|changes)$/, GET: ({ json, params, filters }) =>
       json(readLog(db, params.kind, filters)), auditorRead: true },
 
+    { path: "industry-packages", GET: ({json})=>json(industryPackages(db)), denial: standardDenial },
+    { path: /^industry-packages\/(?<id>[a-z0-9-]+)\/import$/,
+      POST: async ({json,params,readBody,operator})=>json(importIndustryProcedures(db,params.id,await readBody(),operator)),
+      denial: ({params})=>({scope:"procedure",id:params.id,action:"業種パッケージの取込"}) },
     { path: "standard-procedures", GET: ({ json }) => json(listStandardProcedures(db)), denial: standardDenial },
     { path: /^standard-procedures\/(?<id>[a-z0-9-]+)$/,
       GET: ({ json, params }) => json(standardProcedureAdministration(db, params.id)),

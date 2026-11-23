@@ -743,6 +743,65 @@ const standardProcedureFields = [
 ];
 let standardProcedures = [];
 
+const packageApi = "/api/admin/industry-packages";
+let industryCatalog = [];
+const importForm = $("#industryImportForm");
+const packageSelect = $("#industryPackage");
+const importButton = importForm.querySelector("button");
+
+function renderIndustryItems() {
+  const pkg = industryCatalog.find(item => item.id === packageSelect.value);
+  $("#industryItems").innerHTML = (pkg?.procedures ?? []).map(item =>
+    '<div><label><input type="checkbox" name="procedure" value="' + escape(item.id) + '" ' +
+    (item.installed ? 'disabled' : 'checked') + '> ' + escape(item.name) + (item.installed ? '（導入済み）' : '') +
+    '</label><details><summary>内容を確認</summary><p>' + escape(item.instruction) +
+    '</p><p>利用する資料　' + escape(item.source) + '</p><p>成果物　' + escape(item.output) + '</p></details></div>'
+  ).join("");
+  updateImportButton();
+}
+
+function updateImportButton() {
+  importButton.disabled = !importForm.querySelector("input:checked:not(:disabled)");
+}
+
+async function loadIndustryPackages() {
+  const catalog = await request("", undefined, packageApi);
+  const previous = packageSelect.value;
+  industryCatalog = catalog;
+  packageSelect.replaceChildren(...catalog.map(pkg => new Option(pkg.name + "（v" + pkg.version + "）", pkg.id)));
+  if (catalog.some(pkg => pkg.id === previous)) packageSelect.value = previous;
+  renderIndustryItems();
+}
+
+packageSelect.onchange = () => {
+  $("#industryStatus").textContent = "";
+  renderIndustryItems();
+};
+$("#industryItems").onchange = updateImportButton;
+importForm.onsubmit = async event => {
+  event.preventDefault();
+  if (importButton.disabled) return;
+  const pkg = industryCatalog.find(item => item.id === packageSelect.value);
+  const procedures = new FormData(importForm).getAll("procedure");
+  const fieldset = importForm.querySelector("fieldset");
+  fieldset.disabled = packageSelect.disabled = importButton.disabled = true;
+  try {
+    const result = await request("/" + encodeURIComponent(pkg.id) + "/import", { version: pkg.version, procedures }, packageApi);
+    await Promise.all([loadIndustryPackages(), loadStandardProcedures()]);
+    $("#industryStatus").textContent = result.imported.length + "件の手順を会社標準として公開しました。";
+  } catch (error) {
+    $("#industryStatus").textContent = error.message;
+  } finally {
+    fieldset.disabled = packageSelect.disabled = false;
+    updateImportButton();
+  }
+};
+$("#industryImport").ontoggle = async event => {
+  if (!event.target.open) return;
+  try { await loadIndustryPackages(); }
+  catch (error) { $("#industryStatus").textContent = error.message; }
+};
+
 function renderStandardProcedures() {
   $("#standardProcedureRows").innerHTML = standardProcedures.map((p) =>
     '<li><div><h3>' + escape(p.name) + '</h3><p class="meta">' + escape(p.scope) + ' ・ v' +

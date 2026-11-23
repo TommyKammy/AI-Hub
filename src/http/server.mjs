@@ -19,7 +19,7 @@ import { draftFromScreenshot, screenshotFormats, screenshotLimit } from "../inqu
 import { mkdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { listStandardProcedures } from "../procedures/standard-procedures.mjs";
+import { executionWorkflow, listStandardProcedures } from "../procedures/standard-procedures.mjs";
 import { openHub, createWorker, createReceiptRechecker, HubError } from "../jobs/hub.mjs";
 import { adminActor, employees, registerAdminWorkspaces, sourcesFor } from "../fixtures.mjs";
 import { activeMember, csvLine, member } from "../identity/memberships.mjs";
@@ -326,7 +326,7 @@ function listen(entry, port) {
       if (req.method === "GET" && path === "/api/workspace") {
         const employee = activeMember(hub.db, actor);
         const standards = listStandardProcedures(hub.db).map(({id,name,source,example,output,scope,hash,version}) =>
-          ({id,name,source,example,output,scope,hash,version}));
+          ({id,name,source,example,output,scope,hash,version,execution_workflow:executionWorkflow(hub.db,id)}));
         const renewal = standards.find(entry => entry.id === "renewal-brief");
         return json({
           employee,

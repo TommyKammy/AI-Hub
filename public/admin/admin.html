@@ -112,6 +112,16 @@
                 <h2 id="standardProceduresHeading">会社標準の手順</h2>
                 <button type="button" id="refreshStandardProcedures" class="secondary">公開版を更新</button>
               </div>
+              <details id="industryImport">
+                <summary>業種パッケージをインポート</summary>
+                <form id="industryImportForm">
+                  <label for="industryPackage">業種パッケージ</label>
+                  <select id="industryPackage"></select>
+                  <fieldset><legend>会社標準として公開する手順</legend><div id="industryItems"></div></fieldset>
+                  <button type="submit" class="primary" disabled>選択した手順を全社員に公開</button>
+                  <p id="industryStatus" role="status"></p>
+                </form>
+              </details>
               <p id="standardProcedureStatus" role="status"></p>
               <ul id="standardProcedureRows" aria-labelledby="standardProceduresHeading"></ul>
             </section>

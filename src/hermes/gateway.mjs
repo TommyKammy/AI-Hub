@@ -12,7 +12,7 @@ import { profileProjection, saveEmployeePreference, writeProfileFiles } from "..
 import { employeeGroupAllows } from "../identity/enterprise-directory.mjs";
 import { quoteProcedure, resolvePublished } from "../procedures/procedures.mjs";
 import { requireRevisionProcedure } from "../procedures/applied-procedure.mjs";
-import { standardProcedureVersion } from "../procedures/standard-procedures.mjs";
+import { executionWorkflow, standardProcedureVersion } from "../procedures/standard-procedures.mjs";
 import { readFileSync } from "node:fs";
 import { assertDraftSources } from "../jobs/recurring-drafts.mjs";
 import { activeMember } from "../identity/memberships.mjs";
@@ -237,7 +237,7 @@ export function listenGateway(db, actor, host, port = 18800) {
           if (quoteSkill && (result.name!=="quote-comparison" || result.hash!==quoteSkill.hash)) {res.writeHead(409);return res.end();}
           if (row.arrival_comparison && result.name!=="quote-comparison") {res.writeHead(409);return res.end();}
           if (teamQuote && result.name!=="quote-comparison") {res.writeHead(409);return res.end();}
-          if (row.standard_workflow && result.name!==row.standard_workflow) {
+          if (row.standard_workflow && result.name!==executionWorkflow(db,row.standard_workflow)) {
             res.writeHead(409);return res.end();
           }
           if (row.version && !row.standard_workflow && result.name!=="csv-summary") {res.writeHead(409);return res.end();}
@@ -248,7 +248,7 @@ export function listenGateway(db, actor, host, port = 18800) {
             res.writeHead(400); return res.end();
           }
           const pin=row.standard_hash ?? JSON.parse(row.standard_editions || "null")?.[result.name];
-          const standard=pin && pin!==result.hash ? standardProcedureVersion(db,result.name,pin) : null;
+          const standard=pin && pin!==result.hash ? standardProcedureVersion(db,row.standard_workflow ?? result.name,pin) : null;
           if (standard && result.procedure_delivery!==1) {res.writeHead(409);return res.end();}
           const workflow=JSON.stringify({name:result.name,title:standard?.name ?? result.title,hash:standard?.hash ?? result.hash});
           if (row.workflow && row.workflow !== workflow) {res.writeHead(409); return res.end();}

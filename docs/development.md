@@ -90,3 +90,8 @@ docker --context colima-mac-studio-solo compose -p ai-hub-hermes-compare --env-f
 node test/integration/models/compare-local.mjs
 docker --context colima-mac-studio-solo compose -p ai-hub-hermes-compare --env-file .runtime/local.env -f compose.yaml -f .runtime/admin-workspaces.json -f infra/compose.compare.yaml stop
 ```
+
+
+## 業種パッケージを追加する
+
+[業種パッケージ定義](../src/procedures/industry-packages.json) に業種の `id`、表示名 `name`、整数版 `version`、手順配列 `procedures` を追加します。各手順には既存例と同じ形式で `id`、手順名、利用する資料、依頼例、成果物、本文を指定します。これらの手順は既存の文章作成ツールを使います。業種 ID と各業種内の手順 ID には一意の英小文字・数字のスラッグ（語の区切りは単一のハイフン）を使います。ID は公開後も固定し、内容を更新する際はパッケージ版を上げます。定義の配布だけでは社員画面に追加されません。既に導入した手順の本文は管理画面で改訂します。

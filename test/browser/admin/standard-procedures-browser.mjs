@@ -158,19 +158,44 @@ try {
     await staff.locator("#jobRecord .info").getByText("手順　" + procedure.name + " v" + procedure.version, { exact: false }).waitFor();
   }
 
+  await manager.locator("#industryImport summary").first().click();
+  const industryForm = manager.locator("#industryImportForm");
+  const publish = industryForm.getByRole("button", { name: "選択した手順を全社員に公開" });
+  const items = industryForm.getByRole("checkbox");
+  await items.nth(1).uncheck();
+  await publish.click();
+  await manager.locator("#industryStatus").getByText("1件の手順を会社標準として公開しました。").waitFor();
+  assert.ok(await items.first().isDisabled());
+  assert.ok(await items.nth(1).isEnabled());
+  await industryForm.getByLabel("業種パッケージ").selectOption("retail");
+  await publish.click();
+  await manager.locator("#industryStatus").getByText("2件の手順を会社標準として公開しました。").waitFor();
+  assert.equal(await edit.count(), 8);
+  await assertFits(manager);
+  await staff.goto(employee + "/#catalog");
+  await staff.reload();
+  await staff.locator(".catalog-row").filter({hasText:"店舗日報から朝礼メモを作る"}).click();
+  await staff.getByRole("button",{name:"この手順で新しく依頼"}).click();
+  await staff.getByLabel("依頼内容").waitFor();
+  assert.match(await staff.getByLabel("依頼内容").inputValue(), /朝礼/);
+
   const auditor = await browser.newPage({ httpCredentials: { username: "mori", password }, viewport: { width: 390, height: 844 } });
   await auditor.goto(admin + "/admin.html#procedures");
   await auditor.getByRole("region", { name: "ダッシュボード", exact: true }).waitFor();
   assert.equal(await auditor.getByRole("link", { name: "手順の公開", exact: true }).count(), 0);
   for (const [page, origin] of [[auditor, admin], [staff, employee]]) {
     const auth = page === auditor ? { Authorization: "Basic " + Buffer.from("mori:" + password).toString("base64") } : {};
+    assert.equal((await page.request.get(origin + "/api/admin/industry-packages", {headers: auth})).status(), 403);
+    assert.equal((await page.request.post(origin + "/api/admin/industry-packages/retail/import", {
+      headers: {...auth, Origin:origin}, data:{version:1,procedures:["store-brief"]}
+    })).status(), 403);
     assert.equal((await page.request.get(origin + endpoint, { headers: auth })).status(), 403);
     assert.equal((await page.request.post(origin + endpoint + "/" + renewal.id, {
       headers: { ...auth, Origin: origin }, data: { base: renewal.version, name: "権限外の更新" },
     })).status(), 403);
   }
 
-  console.log("会社標準手順5件の編集・公開、同時編集の保護、同内容の再保存、管理画面再読込、社員表示、予約時の版表示、権限制御、モバイル幅を確認");
+  console.log("会社標準手順5件の編集・公開、同時編集の保護、同内容の再保存、管理画面再読込、社員表示、予約時の版表示、業種パッケージの個別・一括導入、社員の依頼入力、権限制御、モバイル幅を確認");
 } finally {
   await browser?.close();
   if (child && child.exitCode === null && child.signalCode === null) {

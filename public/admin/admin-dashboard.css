@@ -285,3 +285,11 @@
   .ua-split { grid-template-columns: minmax(0, 1fr); }
   .ua-scroll tbody th { position: static; }
 }
+
+#industryImport summary { cursor: pointer; }
+#industryImportForm { display: grid; gap: .7rem; margin-block: .8rem; }
+#industryImportForm fieldset { min-inline-size: 0; }
+#industryItems { display: grid; gap: .8rem; }
+#industryItems input[type=checkbox] { width: auto; }
+#industryItems details { margin-inline-start: 1.5rem; }
+#industryImportForm button { justify-self: start; }

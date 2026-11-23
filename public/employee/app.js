@@ -1639,7 +1639,7 @@ function modal(title, body) {
 }
 function openDraftSchedule({template,report,version,quote}) {
   const name=quote ? "個人の見積比較スキル" : template?.name ?? report.ask;
-  const canUseLibraries=template?.kind==="assistant" && !template.recipe && template.standard_workflow!=="document-draft";
+  const canUseLibraries=template?.kind==="assistant" && !template.recipe && workspace.standardWorkflows?.find(item => item.id === template.standard_workflow)?.execution_workflow !== "document-draft";
   const libraryChoices=canUseLibraries ? workspace.libraries.map(library=>
     '<label><input type="checkbox" name="libraries" value="'+esc(library.id)+'"> '+esc(library.name+"（"+library.scope+"）")+'</label>').join("<br>") : "";
   const sourceLabel=kind=>kind==="all" ? "すべての用途" : kind==="renewal" ? "更新商談" : workspace.taskTypes.find(item=>item.id===kind)?.name;

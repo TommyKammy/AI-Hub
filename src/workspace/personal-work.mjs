@@ -1,3 +1,4 @@
+import { executionWorkflow } from "../procedures/standard-procedures.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { activeMember, recordAdminChange, teamPermitsJob } from "../identity/memberships.mjs";
 import { employees, renewalTeam } from "../fixtures.mjs";
@@ -295,7 +296,7 @@ export function personalWork(hub) {
       const [category,id]=typeof input.entry==="string" ? input.entry.split(":") : [];
       if (typeof input.selected!=="boolean" || !id) throw new HubError(400,"対象の手順を選び直してください。");
       if (input.selected) {
-        const allowed=category==="standard" ? standardWorkflows.has(id) || (id==="renewal-brief" && renewalTeam===member.team) :
+        const allowed=category==="standard" ? standardWorkflows.has(executionWorkflow(db,id)) || (id==="renewal-brief" && renewalTeam===member.team) :
           category==="team" ? publishedFor(db,actor).some(procedure=>procedure.id===id) : category==="personal" ?
             this.overview(actor).templates.some(template=>template.id===id) || hub.quoteSkills(actor).some(skill=>skill.id===id) : false;
         if (!allowed) throw new HubError(404,"この手順を利用できません。");
@@ -488,7 +489,8 @@ export function personalWork(hub) {
             const name=input.source_workflow;
             if (!["source-answer","document-draft"].includes(name) || tool?.workflow?.name!==name)
               throw new HubError(400,"採用した規程調査または文章作成の手順を選んでください。");
-            workflow={id:name,hash:tool.workflow.hash};
+            const origin=adopted===1 ? job.standard_procedure : job.versions.find(v=>v.version===adopted)?.standard_procedure;
+            workflow={id:origin?.id ?? name,hash:tool.workflow.hash};
             input={...input,kind:"assistant"};
           } else {
             if (tool?.tool!=="aggregate_csv" || !tool.recipe) throw new HubError(400,"採用したCSV集計から保存してください。");
@@ -604,7 +606,7 @@ export function personalWork(hub) {
       nextWeekly(now,weekday,time);
       const inputLibraries=input.libraries ?? [];
       if (!Array.isArray(inputLibraries) || inputLibraries.length &&
-          (!template || kind!=="assistant" || template.recipe || template.standard_workflow==="document-draft"))
+          (!template || kind!=="assistant" || template.recipe || executionWorkflow(db, template.standard_workflow)==="document-draft"))
         throw new HubError(400,"この手順で使う資料の種類を確認してください。");
       const libraries=inputLibraries.length ? librarySelection(member,inputLibraries,db) : [];
       const origin=original ? {job,version} : quote ? {quote:{id:quote.id,hash:quote.hash}} : {template:{id:template.id,version:template.version},

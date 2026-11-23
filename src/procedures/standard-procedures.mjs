@@ -15,6 +15,7 @@ const renewal = {
   example: "更新商談の論点を確認して",
   output: "前提と確認事項を分けた更新商談メモ",
 };
+const packages = JSON.parse(readFileSync(new URL("./industry-packages.json", import.meta.url), "utf8"));
 const procedureIds = [renewal.id, ...standardWorkflows.keys()];
 const limits = { name: 120, source: 400, example: 400, output: 400, instruction: 20_000 };
 const fields = "id,kind,scope,version,hash,content_hash,name,source,example,output,instruction,created_at,operator";
@@ -41,6 +42,9 @@ export function migrateStandardProcedures(db) {
       name TEXT NOT NULL, source TEXT NOT NULL, example TEXT NOT NULL, output TEXT NOT NULL,
       instruction TEXT NOT NULL, created_at INTEGER, operator TEXT,
       PRIMARY KEY(id,version), UNIQUE(id,hash)
+    );
+    CREATE TABLE IF NOT EXISTS industry_procedure_imports (
+      id TEXT PRIMARY KEY, package_id TEXT NOT NULL, package_version INTEGER NOT NULL, workflow TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS standard_procedure_changes (
       id TEXT NOT NULL, version INTEGER NOT NULL, base_version INTEGER NOT NULL,
@@ -69,7 +73,6 @@ function verifiedRelease(release) {
 }
 
 export function currentStandardProcedure(db, id) {
-  if (!procedureIds.includes(id)) throw new HubError(404, "標準手順が見つかりません。");
   const release = db.prepare(`SELECT ${fields} FROM standard_procedure_releases
     WHERE id=? ORDER BY version DESC LIMIT 1`).get(id);
   if (!release) throw new HubError(404, "標準手順が見つかりません。");
@@ -77,11 +80,12 @@ export function currentStandardProcedure(db, id) {
 }
 
 export function listStandardProcedures(db) {
-  return procedureIds.map(id => currentStandardProcedure(db, id));
+  const imported=db.prepare("SELECT id FROM industry_procedure_imports ORDER BY package_id,id").all();
+  return [...procedureIds,...imported.map(row=>row.id)].map(id => currentStandardProcedure(db, id));
 }
 
 export function findStandardProcedureVersion(db, id, hash) {
-  if (!procedureIds.includes(id) || typeof hash !== "string") return null;
+  if (typeof hash !== "string") return null;
   const release = db.prepare(`SELECT ${fields} FROM standard_procedure_releases WHERE id=? AND hash=?`).get(id, hash);
   return release ? verifiedRelease(release) : null;
 }
@@ -133,5 +137,56 @@ export function saveStandardProcedure(db, id, input, operator) {
     recordAdminChange(db, { operator, scope: "procedure", target: id, action: "会社標準手順の改訂",
       before: "v" + current.version, after: "v" + release.version, reason });
     return release;
+  });
+}
+
+export function executionWorkflow(db, id) {
+  if (typeof id !== "string") return null;
+  if (standardWorkflows.has(id)) return id;
+  return db.prepare("SELECT workflow FROM industry_procedure_imports WHERE id=?").get(id)?.workflow;
+}
+
+function importedId(pkg, item) {
+  return `industry-${pkg.id}--${item.id}`;
+}
+
+export function industryPackages(db) {
+  const rows = db.prepare("SELECT id FROM industry_procedure_imports").all();
+  const installed = new Set(rows.map(row => row.id));
+  return packages.map(pkg => ({
+    ...pkg,
+    procedures: pkg.procedures.map(item => ({ ...item, installed: installed.has(importedId(pkg, item)) })),
+  }));
+}
+
+export function importIndustryProcedures(db, packageId, input, operator) {
+  const pkg = packages.find(row => row.id === packageId);
+  if (!pkg) throw new HubError(404, "業種パッケージが見つかりません。");
+  if (input?.version !== pkg.version) throw new HubError(409, "パッケージを開き直してください。");
+
+  const ids = input.procedures;
+  if (!Array.isArray(ids) || !ids.length || new Set(ids).size !== ids.length ||
+      !ids.every(id => pkg.procedures.some(item => item.id === id)))
+    throw new HubError(400, "取り込む手順を選択してください。");
+
+  return transaction(db, () => {
+    const imported = [];
+    const insert = db.prepare(`INSERT INTO industry_procedure_imports(id, package_id, package_version, workflow)
+      VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING`);
+    for (const item of pkg.procedures.filter(item => ids.includes(item.id))) {
+      const id = importedId(pkg, item);
+      if (!insert.run(id, pkg.id, pkg.version, "document-draft").changes) continue;
+      const edits = editedFields(item);
+      const release = {
+        ...edits, id, kind: "assistant", scope: "全社員", version: 1, operator,
+        created_at: Date.now(), content_hash: sha256(edits.instruction),
+      };
+      release.hash = revisionHash(release);
+      insertRelease(db, release);
+      recordAdminChange(db, { operator, scope: "procedure", target: id, action: "業種パッケージの取込",
+        before: "未導入", after: "v1", reason: pkg.name + "パッケージ v" + pkg.version });
+      imported.push(id);
+    }
+    return { imported };
   });
 }

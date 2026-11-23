@@ -9,7 +9,7 @@ import test from "node:test";
 import { listenGateway } from "../../src/hermes/gateway.mjs";
 import { createWorker, openHub } from "../../src/jobs/hub.mjs";
 import { makeDraft } from "../../src/procedures/procedures.mjs";
-import { currentStandardProcedure, saveStandardProcedure } from "../../src/procedures/standard-procedures.mjs";
+import { importIndustryProcedures, industryPackages, currentStandardProcedure, saveStandardProcedure } from "../../src/procedures/standard-procedures.mjs";
 
 const runPython=promisify(execFile);
 const adapter=new URL("../../infra/work_tools.py",import.meta.url);
@@ -117,4 +117,39 @@ test("更新商談の確認と回答後で同じ手順を送り、改訂後の�
   assert.equal(hub.get("sato",fresh).skill_version,release.version);
   assert.equal(hub.get("sato",fresh).status,"done");
   assert.match(makeDraft(hub.db,"sato",fresh,"contract").instruction,new RegExp(phrase,"u"));
+});
+
+
+test("業種手順は選択分だけ取り込み、改訂・再取込後も実行には受付時の本文を渡す", async t => {
+  const {db, create, get} = openHub(":memory:");
+  t.after(() => db.close());
+  const pkg = industryPackages(db)[0];
+  const item = pkg.procedures[0];
+  const install = (procedures, version = pkg.version) =>
+    importIndustryProcedures(db, pkg.id, {version, procedures}, "aoki").imported;
+  assert.throws(() => install([item.id, "unknown"]));
+  assert.throws(() => install([item.id], 0));
+  assert.ok(industryPackages(db).every(p => p.procedures.every(i => !i.installed)));
+  const [id] = install([item.id]);
+  const request = {company:"A社", kind:"assistant", ask:item.example, standard_workflow:id,
+    contract:{name:"日報.txt",text:"設備Aの点検が完了した。"}};
+  const job = create("sato", request, "industry-job");
+  const updated = reviseStandard(db, id, "出典付きの引継ぎを作成する。");
+  assert.deepEqual(install([item.id]), []);
+  assert.equal(currentStandardProcedure(db,id).hash, updated.hash);
+  assert.equal(get("sato",job).standard_procedure.version, 1);
+  const worker = createWorker(db,async () => ({run_id:"industry-run"}));
+  await worker();
+  const {ticket} = db.prepare("SELECT ticket FROM work_tool_results WHERE job=?").get(job);
+  const gateway = listenGateway(db,"sato","127.0.0.1",0);
+  t.after(() => gateway.close());
+  await once(gateway,"listening");
+  const load = async name => fetch("http://127.0.0.1:" + gateway.address().port + "/work-tool", {
+    method:"POST", body:JSON.stringify({ticket, result:{tool:"load_workflow", name, title:"手順",
+      hash:currentStandardProcedure(db,name).hash, procedure_delivery:1}})
+  });
+  assert.equal((await load("source-answer")).status, 409);
+  const response = await load("document-draft");
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).standard_procedure.instruction, item.instruction);
 });
