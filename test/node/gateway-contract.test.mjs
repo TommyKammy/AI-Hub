@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import test from "node:test";
 import { connections } from "../../src/models/catalog.mjs";
 import { listenGateway } from "../../src/hermes/gateway.mjs";
 import { createWorker, openHub } from "../../src/jobs/hub.mjs";
 import { setMemberActive } from "../../src/identity/memberships.mjs";
+import { personalWork } from "../../src/workspace/personal-work.mjs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const base = server => "http://127.0.0.1:" + server.address().port;
 
@@ -82,4 +85,49 @@ test("Gatewayは実行ごとに公開モデル、手順、出典、本人の資�
   assert.equal((await infer(owner)).status,403);
   assert.equal((await work(owner)).status,403);
   assert.equal(sent.length,2);
+});
+
+test("定期下書きは受付後に出典の閲覧が失効すると業務ツールと推論の転送を拒否する",async t=>{
+  const hub=openHub(":memory:"), {db}=hub, personal=personalWork(hub);
+  const dir=mkdtempSync(join(tmpdir(),"aihub-recurring-gateway-")), originalRoot=process.env.LIBRARY_ROOT;
+  const library="shared/定期確認", folder=join(dir,library), title="出張規程.txt";
+  process.env.LIBRARY_ROOT=dir;
+  mkdirSync(folder,{recursive:true});
+  writeFileSync(join(folder,title),"出張の申請期限は前日です。");
+  writeFileSync(join(folder,"その他.txt"),"食堂についての資料。");
+  const owner=listenGateway(db,"sato","127.0.0.1",0);
+  t.after(()=>{
+    owner.close();
+    hub.close();
+    rmSync(dir,{recursive:true,force:true});
+    if (originalRoot===undefined) delete process.env.LIBRARY_ROOT;
+    else process.env.LIBRARY_ROOT=originalRoot;
+  });
+  await once(owner,"listening");
+  const {id:template}=personal.saveTemplate("sato",{kind:"assistant",name:"出張規程の確認",ask:"出張の申請期限を調べて。"});
+  const input={origin:{template},name:"定期確認",frequency:"weekly",weekday:5,time:"15:00",libraries:[library]};
+  const now=Date.parse("2027-03-01T10:00:00+09:00");
+  const plan=personal.previewDraftSchedule("sato",input,now);
+  const {id:schedule}=personal.confirmDraftSchedule("sato",{...input,token:plan.token},now);
+  personal.runDue(plan.nextRun);
+  const {last_job:id}=db.prepare("SELECT last_job FROM weekly_schedules WHERE id=?").get(schedule);
+  const worker=createWorker(db,async (_actor,_path,options)=>options ?
+    {run_id:"recurring-gateway-fixture"} : {status:"completed",output:"申請期限は前日です。 [1]"});
+  await worker();
+  const {route_key:route}=db.prepare("SELECT route_key FROM attempts WHERE job_id=?").get(id);
+  const {ticket}=db.prepare("SELECT ticket FROM work_tool_results WHERE job=?").get(id);
+  const post=(path,payload)=>fetch(base(owner)+path,{method:"POST",body:JSON.stringify(payload)});
+  const work=result=>post("/work-tool",{ticket,result});
+  const hash=createHash("sha256").update(readFileSync(new URL("../../skills/source-answer/SKILL.md",import.meta.url))).digest("hex");
+  assert.equal((await work({tool:"load_workflow",name:"source-answer",title:"出張規程",hash})).status,200);
+  assert.equal((await work({tool:"search_libraries",query:"出張"})).status,200);
+  assert.equal((await work(null)).status,200);
+  rmSync(join(folder,title));
+  assert.equal(db.prepare("SELECT status FROM jobs WHERE id=?").get(id).status,"running");
+  assert.equal((await work(null)).status,403);
+  assert.equal((await post("/v1/chat/completions",{messages:[{role:"user",content:"AI_HUB_ROUTE "+route+"\n資料について回答してください。"}]})).status,403);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM model_calls WHERE job=?").get(id).n,0);
+  assert.throws(()=>hub.get("sato",id),{status:403});
+  await worker();
+  assert.equal(db.prepare("SELECT status FROM jobs WHERE id=?").get(id).status,"source_blocked");
 });

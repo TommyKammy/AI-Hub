@@ -70,6 +70,7 @@ try {
   assert.ok((await dialog.locator("section").first().locator("mark").allTextContents()).some(s=>s.includes("7月1日")));
   assert.ok((await dialog.locator("section").last().locator("mark").allTextContents()).some(s=>s.includes("8月1日")));
   await click("閉じる",dialog);
+  await page.locator("#jobRecord summary").click();
   await click("資料を並べて比較"); assert.equal(await dialog.locator(".note").first().textContent(),old);
   assert.equal(await dialog.locator(".note").last().textContent(),next); await click("閉じる",dialog);
   await page.goto(base+"/#jobs"); await click("複数の仕事から依頼");
@@ -109,6 +110,7 @@ try {
   await label("実行時刻（日本時間）",dialog).fill(due.toISOString().slice(11,16));
   await label("資料の対象期間",dialog).selectOption("30");
   await label("資料に使う完了した仕事",dialog).selectOption("meeting");
+  await click("予約内容を確認する",dialog);
   await click("定期実行を登録",dialog); await dialog.waitFor({state:"hidden"});
   schedule = (await receipt("workspace")).schedules.find(s=>s.name.endsWith(tag)).id;
   await page.goto(base+"/#work/actions");
@@ -126,8 +128,9 @@ try {
   await completed();
   const result = await receipt("jobs/"+scheduled);
   assert.equal(result.kind,"general");
-  assert.ok(result.sources[0].text.includes(title));
-  assert.ok(!result.sources[0].text.includes("比較 " + tag));
+  assert.ok(result.recurring_draft);
+  assert.ok(result.sources.some(source=>source.job===meeting && source.title===title));
+  assert.ok(result.sources.every(source=>source.job!==comparison));
   await page.locator("#notifications").click();
   const reminder = dialog.locator("button").filter({hasText:"確認待ちのリマインダー"}).filter({hasText:tag});
   await reminder.click({timeout:90000}); await page.waitForURL("**/#job/"+waiting);

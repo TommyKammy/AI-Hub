@@ -37,6 +37,7 @@ try {
     await result(original);
   }
   await page.goto(base+"/#job/"+original);
+  await page.locator("#jobRecord summary").click();
   await page.getByRole("button",{name:"集計条件を自分用に保存"}).click();
   assert.match(await page.locator("#dlgbody").innerText(),/返品.*除外/s);
   await page.getByLabel("手順名").fill(name);
@@ -81,6 +82,7 @@ try {
     await page.locator("#catalogResults button").filter({hasText:name}).click();
     await page.getByRole("button",{name:"定期実行を設定"}).click();
     await page.getByLabel("繰り返し").selectOption("monthly");
+    await page.getByRole("button",{name:"予約内容を確認する"}).click();
     await page.getByRole("button",{name:"定期実行を登録"}).click();
     await page.locator("#dialog").waitFor({state:"hidden"});
     await page.goto(base+"/#jobs/reservations");
@@ -105,6 +107,7 @@ try {
     await page.goto(base+"/#job/"+next);
     assert.match(await page.locator("#memoText").innerText(),/合計　250/);
     await page.goto(base+"/#jobs/reservations"); await scheduled.getByRole("button",{name:"一時停止"}).click();
+    await scheduled.getByRole("button",{name:"再開"}).waitFor();
     console.log("月次予約",next);
   }
 } finally {await browser.close();}

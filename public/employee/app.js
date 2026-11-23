@@ -1,6 +1,7 @@
 import { icon } from "./visual.js";
 import { employeeInquiries, versionReceipts } from "./employee-inquiries.js";
 import { workPlanning, installDistribution } from "./work-planning.js";
+import { mountAnswerSpeech, stopAnswerSpeech } from "./answer-speech.js";
 import { checkSessionResponse, installAccountSession } from "./account-session.js";
 
 const verifyAccountSession = installAccountSession({ onDisabled: showDisabled });
@@ -92,6 +93,7 @@ function route(path = location.hash.slice(1) || "home") {
 }
 function leavePreviousJob(nextRoute) {
   if (!job || nextRoute === "job/" + job.id) return;
+  stopAnswerSpeech();
   if (nextRoute !== 'job/' + openedVersion?.job) openedVersion = null;
   job = null;
   lastView = null;
@@ -120,7 +122,8 @@ function status(j) {
     ["waiting","source_waiting"].includes(j.status) ? "wait" : j.status === "done" ? "" :
     ["closed_unconfirmed","source_blocked","source_expired"].includes(j.status) ? "stop" : "run";
   const phase = j.phase?.startsWith("inquiry-") ? "問い合わせの起票案を作成中" : j.phase?.startsWith("actions-") ? "宿題候補を抽出中" : j.phase === "review" ? "資料を照合中" : j.phase?.startsWith("question-") ? "質問に回答中" : j.phase?.startsWith("revise-") ? "修正中" : "成果物を作成中";
-  const label = j.status === "running" ? (j.phase.startsWith("learn-quote-") ? "個人スキルを保存中" : phase) : labels[j.status];
+  const label = j.status === "done" && j.recurring_draft ? "定期下書き" :
+    j.status === "running" ? (j.phase.startsWith("learn-quote-") ? "個人スキルを保存中" : phase) : labels[j.status];
   return '<span class="status ' + tone + '">' + label + "</span>";
 }
 function section(title, extra = "") {
@@ -273,9 +276,11 @@ function showCatalogEntry(item) {
     (item.template ? button("新しいCSVで使う","template/"+item.template) : '')+
     (item.personalTemplate ? button("依頼内容と出力形式を設定","template/"+item.personalTemplate) : '')+
     (item.quote ? button("新しい見積2件で使う","quote-run/"+item.quote) : '')+
+    (item.quote ? button("定期実行を設定","quote-schedule/"+item.quote) : '')+
     (item.template || item.personalTemplate ? button("定期実行を設定","template-schedule/"+(item.template || item.personalTemplate)) : '')+
     button(favorite ? "お気に入りを解除" : "お気に入りに追加","favorite-catalog/"+item.key,"secondary")+
-    (item.key.startsWith("personal:") ? button("この手順を削除","delete-one/procedures/"+item.id) : "")+"</div>");
+    (item.key.startsWith("personal:") ? button("この手順を削除","delete-one/procedures/"+item.id) : "")+"</div>"+
+    (item.quote ? '<p class="note">見積比較には毎回、新しい見積書2件が必要です。</p>' : ""));
 }
 function fillComposerProcedure(form) {
   if (!composerProcedure) return;
@@ -954,6 +959,7 @@ function sourceLinks(j) {
     .join("");
 }
 function memoTitle(j) {
+  if (j.recurring_draft) return "定期下書き";
   if (j.csv_skill) return j.csv_skill.name;
   if (j.work_tool?.tool==="compare_quotes") return "見積比較表";
   if (j.sources[0]?.period) return "前回からの変化";
@@ -1030,12 +1036,17 @@ function memoPanel(j, version = displayedVersion(j)) {
   const quoteSkill = workspace.quote_skills?.find(s=>s.job===j.id && s.version===version);
   const learnQuote = version>1 && j.work_tool?.tool==="compare_quotes" && !j.team_denied;
   let adopt = j.versions.length > 1 && version !== j.adopted_version ? button("この版を採用", "adopt/" + version, "secondary") : '';
+  if (j.kind==="weekly" && j.status==="done" && !j.team_denied && !j.procedure_revoked &&
+      version===(j.adopted_version ?? (j.versions.length===1 ? 1 : null)))
+    adopt += button("この版から定期下書きを予約","draft-schedule/"+version);
   if (learnQuote && ["done","failed"].includes(j.status) && !quoteSkill)
     adopt += button(j.adopted_version===version ? "採用版の比較基準を個人スキルに保存" : "この版を採用して個人スキルに保存","adopt-quote/"+version,"secondary");
   const savedQuote = quoteSkill ? '<section><h3>本人用の個人スキルに保存済み</h3><p>比較項目　'+esc(quoteSkill.criteria.join("・"))+
     '</p><details><summary>SKILL.md に保存した判断ルール</summary>'+
     (quoteSkill.rules.length ? quoteSkill.rules.map(rule=>'<p>'+esc(rule)+'</p>').join("") : '<p>今回の見積の原文を照合し、記載がない項目は要確認にします。</p>')+
-    '</details>'+button("新しい見積2件で使う","quote-run/"+quoteSkill.id,"secondary")+'</section>' : '';
+    '</details>'+
+    button("新しい見積2件で使う","quote-run/"+quoteSkill.id,"secondary")+
+    button("定期実行を設定","quote-schedule/"+quoteSkill.id,"secondary")+'</section>' : '';
   const comparisons = j.comparisons.filter(c=>c.current_version===version).map(c=>
     '<section><h3>前回からの変化</h3><small>'+esc(c.previous)+' ・ 第'+c.previous_version+'版</small>' +
     (c.memo ? '<p class="note">'+esc(c.memo).replace(/\[([12])\]/g,(_,n)=>button("["+n+"]","origin/"+(n==="1" ? c.previous_job+"/"+c.previous_version : j.id+"/"+version),"citation"))+
@@ -1047,10 +1058,11 @@ function memoPanel(j, version = displayedVersion(j)) {
     (!applied && standardProcedure ? '<p class="meta">使用した手順　'+esc(standardProcedure.name)+' ・ 第'+esc(standardProcedure.version)+'版</p>' : '')+
     inquiries.jobAnswer(j,version,workspace.employee.name) +
     (result?.table ? quoteTable(j,result.table,version) : '<p class="doc-body" id="memoText">' + inquiries.citationText(selected.memo, j,version) + '</p>') +
+    (selected.memo.trim() ? '<div id="answerSpeech"></div>' : '') +
     workEvidence(result, standardProcedure) + delta + compare + '<div class="actions">' +
     '<button type="button" class="secondary" command="--copy" commandfor="memoText">出典付きでコピー</button>' +
     (editable && workspace.memory_enabled ? button("今後も使う","remember-answer/"+version) : "") +
-    (j.kind === "meeting" && !j.team_denied ? button("宿題を登録","track/" + version,"secondary") + button(j.candidate_sets.some(s=>s.version===version) ? "宿題候補を確認" : "宿題候補を抽出","candidates/"+version,"secondary") : "") + button("Markdownで保存", "export-memo", "secondary") + (!j.team_denied && !j.sources[0]?.period ? button("前回の報告と比較","report-diff/"+version,"secondary") : "") + button("同僚に共有", "share/" + version, "secondary") + adopt +
+    (j.kind === "meeting" && !j.team_denied ? button("宿題を登録","track/" + version,"secondary") + button(j.candidate_sets.some(s=>s.version===version) ? "宿題候補を確認" : "宿題候補を抽出","candidates/"+version,"secondary") : "") + button("Markdownで保存", "export-memo", "secondary") + (!j.team_denied && !j.sources[0]?.period ? button("前回の報告と比較","report-diff/"+version,"secondary") : "") + (!j.recurring_draft ? button("同僚に共有", "share/" + version, "secondary") : "") + adopt +
     (editable && consultationCatalog(j,version).eligible.length ? button("この相談で使う","apply-catalog/"+version,"secondary") : "")+
     inquiries.inquiryButton(j,version,workspace.inquiry_desks)+'<small id="copyStatus" role="status"></small></div>' + savedQuote + comparisons;
 }
@@ -1295,6 +1307,7 @@ function notice(text) {
 }
 function showDisabled(error) {
   if (error.code !== "employee_disabled") return false;
+  stopAnswerSpeech();
   ++generation;
   clearTimeout(timer);
   lastView = workspace = job = requestKey = requestBody = null;
@@ -1368,8 +1381,11 @@ function display(ticket,shared) {
       : page === "jobs"
         ? jobsPage(current)
         : page === "work" ? workPage(current) : catalogPage();
+  const speechVersion = job && displayedVersion(job);
+  mountAnswerSpeech($("#answerSpeech"), [viewer, job?.id], speechVersion,
+    job?.versions.find(item => item.version === speechVersion)?.memo, focused);
   if ($("#planningRoot")) {
-    const planning=existingPlanning?.dataset.actor === workspace.employee.actor && existingPlanning.dataset.team === workspace.employee.team
+    const planning=existingPlanning?.dataset.actor === workspace.employee.actor && existingPlanning.dataset.ownerTeam === workspace.employee.team
       ? existingPlanning : workPlanning(workspace,api,go);
     planning.refreshItems(workspace.schedules);
     $("#planningRoot").append(planning);
@@ -1489,6 +1505,7 @@ async function reload() {
       rows.some(x => ["unknown","scheduled","source_waiting"].includes(x.status))) timer = setTimeout(reload, 5000);
   } catch (e) {
     if (seq !== generation || showDisabled(e)) return;
+    stopAnswerSpeech();
     lastView = null;
     notice(e.message);
     $("#main").innerHTML = button("ホームへ", "home");
@@ -1524,7 +1541,11 @@ async function updateNotifications() {
   } catch (err) { if (seq === noticeRequest && actor === notificationActor) showDisabled(err); }
 }
 setInterval(updateNotifications, 7000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) reload(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopAnswerSpeech();
+  else reload();
+});
+window.addEventListener("pagehide", stopAnswerSpeech);
 async function openEvent(seq) {
   try {
     const {job:id,inquiry,round} = await api("/api/notifications/" + seq + "/read", {method:"POST"});
@@ -1584,6 +1605,82 @@ function modal(title, body) {
   $("#dlgbody").innerHTML = body;
   const dialog = $("#dialog");
   if (!dialog.open) dialog.showModal();
+}
+function openDraftSchedule({template,report,version,quote}) {
+  const name=quote ? "個人の見積比較スキル" : template?.name ?? report.ask;
+  const canUseLibraries=template?.kind==="assistant" && !template.recipe && template.standard_workflow!=="document-draft";
+  const libraryChoices=canUseLibraries ? workspace.libraries.map(library=>
+    '<label><input type="checkbox" name="libraries" value="'+esc(library.id)+'"> '+esc(library.name+"（"+library.scope+"）")+'</label>').join("<br>") : "";
+  const sourceLabel=kind=>kind==="all" ? "すべての用途" : kind==="renewal" ? "更新商談" : workspace.taskTypes.find(item=>item.id===kind)?.name;
+  const dayOptions=weekdays.map((d,i)=>'<option value="'+i+'"'+(i===(report ? 5 : 0) ? ' selected' : '')+'>'+d+'曜日</option>').join("");
+  modal("定期下書きを予約",'<form id="draftSchedule" aria-labelledby="dlgtitle">'+
+    '<p>'+esc(name)+' ・ 第'+(template?.version ?? quote?.skill_version ?? version)+'版</p>'+
+    '<label class="formlabel">予定の名前<input name="name" required maxlength="80" value="'+esc(name.slice(0,80))+'"></label>'+
+    '<label class="formlabel">繰り返し<select name="frequency"><option value="weekly">毎週</option><option value="monthly">毎月</option></select></label>'+
+    '<label class="formlabel">曜日<select name="weekday">'+dayOptions+'</select></label>'+
+    '<label class="formlabel" hidden>実行日<select disabled name="month_day"><option value="0">月末</option>'+
+    Array.from({length:31},(_,i)=>'<option value="'+(i+1)+'">'+(i+1)+'日</option>').join("")+'</select></label>'+
+    '<label class="formlabel">実行時刻（日本時間）<input type="time" name="time" required value="16:00"></label>'+
+    (quote ? '<p>「次回分を確認」でその回に使う新しい見積書を2件登録します。未登録の回はスキップします。</p>' :
+      template?.recipe ? '<p>「次回分を確認」でその回に使うCSVを登録します。未登録の回はスキップします。</p>' :
+      '<div data-history-sources><label class="formlabel">資料の対象期間<select name="window_days"><option value="7">直近7日間</option><option value="30">直近30日間</option></select></label>'+
+      '<label class="formlabel">資料に使う完了した仕事<select name="source_kind">'+
+      ["all","renewal",...workspace.taskTypes.map(item=>item.id)].map(kind=>'<option value="'+esc(kind)+'">'+esc(sourceLabel(kind))+'</option>').join("")+
+      '</select></label></div>')+
+    (libraryChoices ? '<fieldset><legend>予約に使う資料置き場</legend>'+libraryChoices+'</fieldset>' : '')+
+    '<p>保存先　自分の依頼一覧（定期下書き）</p>'+
+    '<p role="status" data-draft-preview></p><p class="form-error" role="alert"></p>'+
+    '<div class="actions"><button class="secondary" type="submit">予約内容を確認する</button>'+
+    '<button class="primary" type="button" hidden>定期実行を登録</button></div></form>');
+  const form=$("#draftSchedule"), status=form.querySelector("[data-draft-preview]"), errorField=form.querySelector(".form-error");
+  const confirm=form.querySelector('button[type="button"]');
+  let reviewed, generation=0;
+  form.oninput=()=>{
+    generation++;
+    reviewed=null;
+    confirm.hidden=true;
+    status.textContent="";
+    errorField.textContent="";
+    const history=form.querySelector("[data-history-sources]");
+    if (history) history.hidden=Boolean(form.querySelector('[name="libraries"]:checked'));
+  };
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    const request=++generation, button=event.submitter, data=new FormData(form);
+    const input={...Object.fromEntries(data),origin:quote ? {quote:quote.id} : template ? {template:template.id} : {job:report.id,version},
+      weekday:Number(data.get("weekday")),month_day:Number(data.get("month_day")),
+      window_days:Number(data.get("window_days") || 7),libraries:data.getAll("libraries")};
+    button.disabled=true;
+    confirm.hidden=true;
+    reviewed=null;
+    errorField.textContent="";
+    try {
+      const plan=await api("/api/schedules/draft-preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});
+      if (request!==generation) return;
+      const cadence=input.frequency==="weekly" ? "毎週"+weekdays[input.weekday]+"曜日" : input.month_day ? "毎月"+input.month_day+"日" : "毎月末";
+      const materials=plan.quote ? "その回に登録した新しい見積書2件" : plan.csv ? "その回に登録したCSV" : plan.libraries.length ?
+        plan.libraries.map(library=>library.name+"（"+library.scope+"）").join("、") :
+        "実行時点から直近"+input.window_days+"日間の完了した仕事（"+sourceLabel(input.source_kind)+"）";
+      status.replaceChildren(document.createTextNode("次回　"+plannedTime(plan.nextRun)+"（日本時間）・"+cadence),
+        document.createElement("br"),document.createTextNode((report ? "採用版　" : "個人手順　")+plan.sourceTitle),
+        document.createElement("br"),document.createTextNode("資料　"+materials));
+      reviewed={...input,token:plan.token};
+      confirm.hidden=false;
+    } catch(error) { if (request===generation && !showDisabled(error)) errorField.textContent=error.message; }
+    finally {button.disabled=false;}
+  };
+  confirm.onclick=async ()=>{
+    if (!reviewed || confirm.disabled) return;
+    confirm.disabled=true;
+    try {
+      await api("/api/schedules/draft-confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(reviewed)});
+      if (!form.isConnected || !$("#dialog").open) return;
+      $("#dialog").close();
+      go("jobs/reservations");
+      notice("定期下書きを予約しました。");
+    } catch(error) { if (!showDisabled(error)) errorField.textContent=error.message; }
+    finally {confirm.disabled=false;}
+  };
 }
 function deletionDialog(kind,id) {
   const jobs=kind==="jobs";
@@ -1652,6 +1749,7 @@ document.addEventListener("change", event => {
     if (form.elements.contractFile) refreshSources(form);
   }
   if (event.target.id !== "memoVersion") return;
+  stopAnswerSpeech();
   history.replaceState(null,"","#job/"+job.id+"/version/"+event.target.value);
   openedVersion = {job:job.id,version:Number(event.target.value)};
   display();
@@ -1824,7 +1922,11 @@ document.addEventListener("click", async (e) => {
     try {
       const o=await api("/api/schedules/"+id+"/next");
       modal(o.name+"の次回分",'<form id="occurrence" data-id="'+id+'" data-slot="'+o.slot+'" data-revision="'+o.revision+'">'+
-        dateField(japanInput(o.run_at))+(o.csv ? '<p>'+esc(o.file ? "登録済み　"+o.file : "この回のCSVは未登録です。")+'</p><label for="slotCsv">この回のCSV</label><input id="slotCsv" type="file" name="file" accept=".csv" '+(o.file ? '' : 'required')+'>' :
+        dateField(japanInput(o.run_at))+(o.quote ?
+          '<p>'+esc(o.files.length ? "登録済み　"+o.files.join("、") : "この回の見積書は未登録です。")+'</p>'+
+          [0,1].map(index=>'<label class="formlabel">この回の見積書'+(index+1)+'<input type="file" name="quote'+index+'" accept=".pdf,.docx,.txt,.md,.csv" '+(o.files.length ? '' : 'required')+'></label>').join("") :
+          o.csv ? '<p>'+esc(o.file ? "登録済み　"+o.file : "この回のCSVは未登録です。")+'</p><label for="slotCsv">この回のCSV</label><input id="slotCsv" type="file" name="file" accept=".csv" '+(o.file ? '' : 'required')+'>' :
+        (o.fixedSources?.length ? '<p>毎回使う資料　'+esc(o.fixedSources.join("、"))+'</p>' : '')+
         '<fieldset><legend>現時点で使う予定の仕事</legend><p>今回除く仕事のチェックを外してください。</p>'+
         '<div data-occurrence-sources>'+occurrenceSources(o.sources,new Set(o.excluded))+'</div>'+
         '</fieldset>')+'<div class="actions"><button class="primary" value="change">今回の変更を保存</button><button class="secondary" value="skip" formnovalidate>今回は休む</button></div><p class="form-error" role="alert"></p></form>');
@@ -2042,17 +2144,17 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (op.startsWith("template-schedule/")) {
-    const t = workspace.templates.find(t => t.id === op.split("/")[1]);
-    modal(t.name + "の定期実行",'<form id="templateSchedule" data-template="' + esc(t.id) + '">' +
-      '<label class="formlabel">予定の名前<input name="name" required maxlength="80" value="' + esc(t.name) + '"></label>' +
-      '<label class="formlabel">繰り返し<select name="frequency"><option value="weekly">毎週</option><option value="monthly">毎月</option></select></label>' +
-      '<label class="formlabel">曜日<select name="weekday">' + weekdays.map((d,i) => '<option value="' + i + '">' + d + '曜日</option>').join("") + '</select></label>' +
-      '<label hidden>実行日<select disabled name="month_day"><option value="0">月末</option>' + Array.from({length:31},(_,i) => '<option value="' + (i+1) + '">' + (i+1) + '日</option>').join("") + '</select></label>' +
-      '<label class="formlabel">実行時刻（日本時間）<input type="time" name="time" required value="16:00"></label>' +
-      (t.recipe ? '<p>「次回分を確認」からその回のCSVを登録してください。CSVを登録した回だけ集計します。</p>' : '<label class="formlabel">資料の対象期間<select name="window_days"><option value="7">直近7日間</option><option value="30">直近30日間</option></select></label>' +
-      '<label class="formlabel">資料に使う完了した仕事<select name="source_kind"><option value="all">すべての用途</option><option value="renewal">更新商談</option>' +
-      workspace.taskTypes.map(k => '<option value="' + esc(k.id) + '">' + esc(k.name) + '</option>').join("") + '</select></label>') +
-      '<button class="primary">定期実行を登録</button><p class="form-error" role="alert"></p></form>');
+    const template=workspace.templates.find(item=>item.id===op.split("/")[1]);
+    if (template) openDraftSchedule({template});
+    return;
+  }
+  if (op.startsWith("quote-schedule/")) {
+    const quote=workspace.quote_skills.find(item=>item.id===op.split("/")[1]);
+    if (quote) openDraftSchedule({quote});
+    return;
+  }
+  if (op.startsWith("draft-schedule/")) {
+    if (job) openDraftSchedule({report:job,version:Number(op.split("/")[1])});
     return;
   }
   if (op === "schedule-new") {
@@ -2389,6 +2491,13 @@ document.addEventListener("submit", async (e) => {
       if (change.action === "change") Object.assign(change,{run_at:japanStamp(f.elements.scheduledAt.value),
         excluded:[...f.querySelectorAll("input[name=include]:not(:checked)")].map(c=>c.value)});
       if (change.action==="change" && f.elements.file?.files[0]) change.contract=await readCsv(f.elements.file.files[0]);
+      if (change.action==="change" && f.elements.quote0) {
+        const files=[f.elements.quote0.files[0],f.elements.quote1.files[0]];
+        if (files.some(Boolean)) {
+          if (!files.every(Boolean)) throw Error("差し替える場合は新しい見積書を2件選んでください。");
+          change.quotes=await Promise.all(files.map(readAttachment));
+        }
+      }
       await api("/api/schedules/"+f.dataset.id+"/next",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(change)});
       $("#dialog").close(); await reload(); notice(change.action==="skip" ? "次回分を休みにしました。" : "次回分を変更しました。");
     } catch(error) { if (!showDisabled(error)) f.querySelector(".form-error").textContent=error.message; } finally {submit.disabled=false;}
@@ -2423,14 +2532,11 @@ document.addEventListener("submit", async (e) => {
     finally { btn.disabled = false; }
     return;
   }
-  if (["personalTemplate","weeklySchedule","shareMemo","fileProject","trackAction","registerCandidates","templateSchedule"].includes(f.id)) {
+  if (["personalTemplate","weeklySchedule","shareMemo","fileProject","trackAction","registerCandidates"].includes(f.id)) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(f));
     let path = "/api/templates", message = "自分用の手順を保存しました。";
-    if (f.id === "templateSchedule") {
-      Object.assign(data,{template_id:f.dataset.template,window_days:Number(data.window_days || 7),month_day:Number(data.month_day || 0),weekday:Number(data.weekday || 0)});
-    }
-    if (["weeklySchedule","templateSchedule"].includes(f.id)) {
+    if (f.id === "weeklySchedule") {
       path = "/api/schedules"; data.weekday = Number(data.weekday); message = "定期実行を登録しました。";
     }
     if (f.id === "fileProject") { path="/api/jobs/"+f.dataset.job+"/project"; message="案件に追加しました。"; }
@@ -2574,6 +2680,7 @@ document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
 window.addEventListener("hashchange", () => {
+  stopAnswerSpeech();
   if ($("#dialog").open) $("#dialog").close();
   setMenu(false);
   reload();

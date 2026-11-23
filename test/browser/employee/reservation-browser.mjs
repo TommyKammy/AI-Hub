@@ -46,7 +46,9 @@ try {
   await page.locator("#eventList button").filter({hasText:"仕事が完了"}).filter({hasText:tag}).first().click();
   assert.equal(page.url(),base+"/#job/"+id);
   await page.locator("#memoText .citation").first().click();
-  assert.ok((await page.locator("#dialog").innerText()).includes(notes));
+  const source = page.locator("#dialog .note");
+  await source.waitFor();
+  assert.equal(await source.textContent(), notes);
   for (const [job, expected] of [[id,1],[cancelled,0]]) {
     const count = docker("exec","ai-hub-daily-work-sato-1","python","-c",
       "import sqlite3,sys; print(sqlite3.connect('file:/opt/data/runs_idempotency.db?mode=ro',uri=True).execute('select count(*) from run_idempotency where idempotency_key=?',(sys.argv[1],)).fetchone()[0])",job+"-compose");

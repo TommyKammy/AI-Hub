@@ -1632,3 +1632,17 @@ dialog:has(.source-columns) { width: min(900px, calc(100% - 30px)); }
 #workPlanning, .planning-schedules { display: grid; gap: 14px; }
 .planning-schedules { margin-block: 18px; }
 [data-document-pin]:empty { display: none; }
+#inquiryReview :is(input[type="file"], textarea) {
+  max-inline-size: 100%;
+}
+.inquiry-screenshot img {
+  display: block;
+  object-fit: contain;
+  object-position: left center;
+  max-inline-size: 100%;
+  max-block-size: 13rem;
+  inline-size: auto;
+  block-size: auto;
+  margin-block: .75rem;
+}
+.inquiry-screenshot img[hidden], .inquiry-screenshot [data-screenshot-status]:empty { display: none; }

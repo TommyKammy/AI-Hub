@@ -83,6 +83,7 @@ function reservation(workspace,api,go) {
       const heading=document.createElement("h3"), timing=document.createElement("p");
       heading.textContent=item.name;
       timing.textContent=item.enabled ? "次回 "+formatDate.format(item.next_run)+"（日本時間）" : "停止中";
+      if (item.blocked_reason) timing.textContent+=" ・ "+item.blocked_reason;
       const actions=document.createElement("div");
       actions.className="actions";
       if (item.enabled) {
@@ -100,7 +101,7 @@ function reservation(workspace,api,go) {
       if (item.last_job) {
         const link=document.createElement("a");
         link.href="#job/"+item.last_job;
-        link.textContent="前回の仕事を開く";
+        link.textContent=item.recurring_draft ? "前回の定期下書きを開く" : "前回の仕事を開く";
         actions.append(link);
       }
       row.append(heading,timing,actions);
@@ -122,7 +123,7 @@ export function workPlanning(workspace,api,go) {
   const root=document.createElement("div");
   root.id="workPlanning";
   root.dataset.actor=workspace.employee.actor;
-  root.dataset.team=workspace.employee.team;
+  root.dataset.ownerTeam=workspace.employee.team;
   const booking=reservation(workspace,api,go);
   root.append(booking,distributionForm(workspace,api,go));
   root.refreshItems=booking.refreshItems;
@@ -219,7 +220,7 @@ export function installDistribution(main,job,api,reload) {
   view.className="panel pad distribution-panel";
   if (job.reservation) {
     const item=job.reservation;
-    view.append(textNode("h2","予約から実行した仕事"),textNode("p",item.name+" ／ "+formatDate.format(item.due)+"（日本時間）"));
+    view.append(textNode("h2",item.recurring_draft ? "定期下書きの予約情報" : "予約から実行した仕事"),textNode("p",item.name+" ／ "+formatDate.format(item.due)+"（日本時間）"));
     if (item.period_from!==null) view.append(textNode("p","集計対象期間　"+formatDate.format(item.period_from)+" 〜 "+formatDate.format(item.period_to)));
   }
   if (job.distribution) {

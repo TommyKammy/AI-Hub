@@ -7,6 +7,7 @@ import { publishedFor } from "../procedures/procedures.mjs";
 import {librarySelection} from "../documents/libraries.mjs";
 import {checkCsvColumns, csvSkillRelease} from "../procedures/csv-skill.mjs";
 import {nextWeekday,recentWeekday} from "../jobs/reservation-plan.mjs";
+import {assertDraftSources} from "../jobs/recurring-drafts.mjs";
 
 const day = 86400000, week = 7 * day, japan = 9 * 3600000;
 function field(value, limit) {
@@ -97,6 +98,8 @@ export function personalWork(hub) {
     }
     if (!db.prepare("PRAGMA table_info(schedule_occurrences)").all().some(c=>c.name==="csv_input"))
       db.exec("ALTER TABLE schedule_occurrences ADD COLUMN csv_input TEXT");
+    if (!db.prepare("PRAGMA table_info(schedule_occurrences)").all().some(c=>c.name==="quote_inputs"))
+      db.exec("ALTER TABLE schedule_occurrences ADD COLUMN quote_inputs TEXT");
     if (!db.prepare("PRAGMA table_info(personal_templates)").all().some(c=>c.name==="recipe"))
       db.exec("ALTER TABLE personal_templates ADD COLUMN recipe TEXT; ALTER TABLE personal_templates ADD COLUMN team TEXT");
     if (!db.prepare("PRAGMA table_info(personal_templates)").all().some(c=>c.name==="version"))
@@ -117,6 +120,8 @@ export function personalWork(hub) {
         ALTER TABLE weekly_schedules ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'all'`);
     if (!db.prepare("PRAGMA table_info(weekly_schedules)").all().some(c=>c.name==="planned_libraries"))
       db.exec("ALTER TABLE weekly_schedules ADD COLUMN planned_libraries TEXT; ALTER TABLE weekly_schedules ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo'");
+    if (!db.prepare("PRAGMA table_info(weekly_schedules)").all().some(c=>c.name==="draft_origin"))
+      db.exec("ALTER TABLE weekly_schedules ADD COLUMN draft_origin TEXT; ALTER TABLE weekly_schedules ADD COLUMN blocked_reason TEXT");
     db.exec(`CREATE TABLE IF NOT EXISTS scheduled_provenance(
       job TEXT PRIMARY KEY REFERENCES scheduled_jobs(job), period_from INTEGER, period_to INTEGER, timezone TEXT NOT NULL)`);
   });
@@ -150,12 +155,46 @@ export function personalWork(hub) {
       AND COALESCE((SELECT MIN(created) FROM job_notifications n WHERE n.job=j.id AND n.status='done'),j.created)
       BETWEEN ? AND ? ORDER BY j.created DESC,j.rowid DESC LIMIT 40`).all(s.actor,s.source_kind,s.source_kind,due-s.window_days*day+1,due);
   }
-  function dispatchOccurrence(s,slot,due,excluded,csvInput=null) {
-    let source;
+  function validateDraftScheduleSource(s,member) {
+    const draft=JSON.parse(s.draft_origin);
+    const libraries=JSON.parse(s.planned_libraries || "[]");
+    assertDraftSources(db,member,{template:draft.template,quote:draft.quote,jobs:draft.job ? [draft.job] : [],libraries});
+    const names=libraries.length ? librarySelection(member,libraries,db).map(folder=>folder.name) : [];
+    if (draft.job) names.push(hub.get(member.actor,draft.job).ask+"（採用時の第"+draft.version+"版）");
+    return names;
+  }
+  function dispatchOccurrence(s,slot,due,excluded,{csv_input,quote_inputs}={}) {
+    const draft=JSON.parse(s.draft_origin || "null");
+    let source, permissions;
+    if (draft) {
+      const libraries=JSON.parse(s.planned_libraries || "[]");
+      const rows=["csv","quote"].includes(s.source_kind) || libraries.length ? [] :
+        scheduleSources(s,due).filter(j=>!excluded.includes(j.id) && j.id!==draft.job).slice(0,draft.job ? 11 : 12);
+      permissions={template:draft.template,quote:draft.quote,libraries,jobs:[...(draft.job ? [draft.job] : []),...rows.map(j=>j.id)]};
+      try { assertDraftSources(db,activeMember(db,s.actor),permissions); }
+      catch (error) {
+        if (!(error instanceof HubError) || error.status!==403) throw error;
+        db.prepare("UPDATE weekly_schedules SET enabled=0,blocked_reason=? WHERE id=?").run(error.message,s.id);
+        db.prepare("DELETE FROM schedule_occurrences WHERE schedule=?").run(s.id);
+        return false;
+      }
+      if (libraries.length) source={library_ids:libraries};
+      else if (!["csv","quote"].includes(s.source_kind)) {
+        const refs=rows.map(({id,version})=>({job:id,version}));
+        if (draft.job) refs.unshift({job:draft.job,version:draft.version});
+        source=refs.length && !draft.workflow ? {work_refs:refs} :
+          {minutes:rows.map(j=>j.ask+"\n"+j.memo.replace(/\[\d+\]/g,"")).join("\n\n").slice(0,6000) || "この期間に完了した仕事の記録はありません。"};
+      }
+      if (draft.template && s.source_kind!=="csv" && !draft.renewal) source.personal_template=draft.template;
+    }
     if (s.source_kind==="csv") {
-      if (!csvInput) return;
-      source={csv_template_id:s.template_id,contract:JSON.parse(csvInput)};
-    } else if (s.source_kind==="plan") {
+      if (!csv_input) return;
+      source={csv_template_id:s.template_id,contract:JSON.parse(csv_input)};
+    } else if (s.source_kind==="quote") {
+      if (!quote_inputs) return;
+      const [contract,second_attachment]=JSON.parse(quote_inputs);
+      source={quote_skill_id:draft.quote.id,contract,second_attachment};
+    } else if (!draft && s.source_kind==="plan") {
       const libraries=JSON.parse(s.planned_libraries || "[]");
       source=libraries.length ? {library_ids:libraries} : {};
       if (libraries.length) {
@@ -167,15 +206,17 @@ export function personalWork(hub) {
           return false;
         }
       }
-    } else {
+    } else if (!draft) {
       const rows=scheduleSources(s,due).filter(j=>!excluded.includes(j.id));
       source=s.planned_libraries && rows.length ? {work_refs:rows.slice(0,12).map(({id,version})=>({job:id,version}))} :
         {minutes:rows.map(j=>j.ask+"\n"+j.memo.replace(/\[\d+\]/g,"")).join("\n\n").slice(0,6000) || "この期間に完了した仕事の記録はありません。"};
     }
     const job=hub.create(s.actor,{company:employees[s.actor].company,kind:s.kind,ask:s.ask,...source,
+      ...(draft && {skip_profile:true}),
       ...(s.output_format && {output_format:s.output_format})},"weekly-"+s.id+"-"+slot);
+    if (draft) db.prepare("UPDATE jobs SET recurring_draft=? WHERE id=?").run(JSON.stringify(permissions),job);
     db.prepare("INSERT INTO scheduled_jobs VALUES(?,?,?)").run(job,s.id,slot);
-    if (!["csv","plan"].includes(s.source_kind))
+    if (!["csv","quote","plan"].includes(s.source_kind))
       db.prepare("INSERT INTO scheduled_provenance VALUES(?,?,?,?)").run(job,due-s.window_days*day+1,due,s.timezone);
     db.prepare("UPDATE weekly_schedules SET last_job=? WHERE id=?").run(job,s.id);
   }
@@ -231,7 +272,9 @@ export function personalWork(hub) {
           .all(actor,member.team).map(t=>({...t,recipe:JSON.parse(t.recipe || "null")})),
         shared: this.sharedItems(actor),
         favorites: db.prepare("SELECT entry FROM procedure_favorites WHERE actor=? ORDER BY rowid DESC").all(actor).map(row=>row.entry),
-        schedules: db.prepare("SELECT id,name,weekday,time,enabled,next_run,last_job,frequency,month_day,window_days,source_kind,template_id FROM weekly_schedules WHERE actor=? AND (source_kind<>'csv' OR team=?) ORDER BY name").all(actor,member.team).map(s=>({...s,next_run:nextOccurrence(s).run_at})),
+        schedules: db.prepare(`SELECT id,name,weekday,time,enabled,next_run,last_job,frequency,month_day,window_days,source_kind,template_id,
+          draft_origin IS NOT NULL AS recurring_draft,blocked_reason FROM weekly_schedules WHERE actor=?
+          AND ((source_kind<>'csv' AND draft_origin IS NULL) OR team=?) ORDER BY name`).all(actor,member.team).map(s=>({...s,next_run:nextOccurrence(s).run_at})),
       };
     },
     deleteItems(actor,kind,ids) {
@@ -491,6 +534,7 @@ export function personalWork(hub) {
     share(actor,id,input) {
       return transaction(db, () => {
         const j = hub.get(actor,id);
+        if (j.recurring_draft) throw new HubError(403,"定期下書きは本人の依頼一覧で確認してください。");
         if (actor === input.recipient || !Object.hasOwn(employees,input.recipient)) throw new HubError(400, "共有する相手を選んでください。");
         const recipient=activeMember(db,input.recipient);
         if (!teamPermitsJob(db,id)) throw new HubError(403,"現在の所属ではこの成果物を共有できません。");
@@ -536,7 +580,54 @@ export function personalWork(hub) {
       db.prepare("UPDATE shared_memos SET seen=1 WHERE id=? AND recipient=?").run(id,actor);
       return share;
     },
-    schedule(actor,input,now=Date.now(),confirmed=false) {
+    previewDraftSchedule(actor,input,now=Date.now()) {
+      const member=activeMember(db,actor);
+      const {job,version,template:templateId,quote:quoteId}=input?.origin || {};
+      if ([job,templateId,quoteId].filter(id=>typeof id==="string" && id).length!==1 ||
+          [job,templateId,quoteId].some(id=>id!==undefined && (typeof id!=="string" || !id)) ||
+          job && (!Number.isSafeInteger(version) || version<1)) throw new HubError(400,"採用版または個人手順を指定してください。");
+      const original=job && hub.get(actor,job);
+      const adopted=original && (original.adopted_version ?? (original.versions.length===1 ? 1 : null));
+      const originVersion=original && original.versions.find(v=>v.version===version);
+      if (original && (original.kind!=="weekly" || original.status!=="done" || adopted!==version || !originVersion?.memo))
+        throw new HubError(409,"完了した週報の採用版を開き直してください。");
+      const template=templateId && db.prepare("SELECT * FROM personal_templates WHERE id=? AND actor=? AND (team IS NULL OR team=?)")
+        .get(templateId,actor,member.team);
+      if (templateId && !template) throw new HubError(404,"個人手順が見つかりません。");
+      const quote=quoteId && hub.quoteSkills(actor).find(skill=>skill.id===quoteId);
+      if (quoteId && !quote) throw new HubError(404,"個人の見積比較スキルが見つかりません。");
+      const kind=quote ? "assistant" : template?.kind==="renewal" ? "general" : template?.kind ?? original.kind;
+      const {frequency,weekday=0,month_day=0,time,window_days=7,source_kind="all"}=input;
+      if (!["weekly","monthly"].includes(frequency) || !Number.isInteger(month_day) || month_day<0 || month_day>31 ||
+          ![7,30].includes(window_days) || !["all","renewal",...workspaceTasks.keys()].includes(source_kind))
+        throw new HubError(400,"繰り返しと資料の範囲を確認してください。");
+      nextWeekly(now,weekday,time);
+      const inputLibraries=input.libraries ?? [];
+      if (!Array.isArray(inputLibraries) || inputLibraries.length &&
+          (!template || kind!=="assistant" || template.recipe || template.standard_workflow==="document-draft"))
+        throw new HubError(400,"この手順で使う資料の種類を確認してください。");
+      const libraries=inputLibraries.length ? librarySelection(member,inputLibraries,db) : [];
+      const origin=original ? {job,version} : quote ? {quote:{id:quote.id,hash:quote.hash}} : {template:{id:template.id,version:template.version},
+        workflow:template.standard_workflow,renewal:template.kind==="renewal"};
+      assertDraftSources(db,member,{template:origin.template,quote:origin.quote,jobs:original ? [job] : []});
+      const nextRun=nextSlot(now,{frequency,weekday,month_day,time});
+      const configuration={name:field(input.name,80),kind,ask:quote ? "新しい見積2件を個人スキルで比較してください。" : template?.ask ?? original.ask,
+        output_format:quote?.output_format ?? template?.output_format ?? originVersion?.instruction?.slice(0,500) ?? original?.output_format ?? "",
+        ...(template && {template_id:template.id}),frequency,weekday,month_day,time,window_days,
+        source_kind:quote ? "quote" : libraries.length ? "plan" : source_kind,expected_at:nextRun,planned_libraries:libraries.map(library=>library.id)};
+      const sourceTitle=original ? original.ask+"（採用版・第"+version+"版）" : quote ?
+        "個人の見積比較スキル（第"+quote.skill_version+"版）" : template.name+"（第"+template.version+"版）";
+      const token=adminScheduleKey([actor,member.revision,origin,configuration,libraries]);
+      return {token,origin,configuration,nextRun,sourceTitle,libraries,csv:Boolean(template?.recipe),quote:Boolean(quote)};
+    },
+    confirmDraftSchedule(actor,input,now=Date.now()) {
+      return transaction(db,()=>{
+        const plan=this.previewDraftSchedule(actor,input,now);
+        if (input.token!==plan.token) throw new HubError(409,"資料、手順または次回日時が変わりました。予約を確認し直してください。");
+        return {...this.schedule(actor,plan.configuration,now,true,plan.origin),nextRun:plan.nextRun};
+      });
+    },
+    schedule(actor,input,now=Date.now(),confirmed=false,draft=null) {
       const member = activeMember(db,actor);
       const template = input.template_id && db.prepare("SELECT * FROM personal_templates WHERE id=? AND actor=?").get(input.template_id,actor);
       if (input.template_id && !template) throw new HubError(404,"自分用の手順が見つかりません。");
@@ -544,25 +635,27 @@ export function personalWork(hub) {
       const name = field(input.name,80), ask = template ? template.ask : field(input.ask,4000);
       const format = template ? template.output_format : input.output_format ? field(input.output_format,500) : null;
       const libraries=confirmed && Array.isArray(input.planned_libraries) ? input.planned_libraries : null;
-      const config = {template_id:template?.id ?? null, kind:template?.kind ?? (confirmed ? input.kind : "weekly"),frequency:input.frequency ?? "weekly",
+      const config = {template_id:template?.id ?? null, kind:draft?.renewal ? "general" : template?.kind ?? (confirmed ? input.kind : "weekly"),frequency:input.frequency ?? "weekly",
         month_day:input.month_day ?? 0,window_days:input.window_days ?? 7,source_kind:template?.recipe ? "csv" : input.source_kind ?? "all"};
       if (!["weekly","monthly","weekdays","daily"].includes(config.frequency) || !Number.isInteger(config.month_day) || config.month_day < 0 || config.month_day > 31 ||
-          ![7,30].includes(config.window_days) || (!template?.recipe && !["all","renewal",...workspaceTasks.keys(),...(confirmed ? ["plan"] : [])].includes(config.source_kind)))
+          ![7,30].includes(config.window_days) || (!template?.recipe && !["all","renewal",...workspaceTasks.keys(),...(confirmed ? ["plan"] : []),...(draft?.quote ? ["quote"] : [])].includes(config.source_kind)))
         throw new HubError(400,"繰り返しと資料の範囲を確認してください。");
       nextWeekly(now,input.weekday,input.time);
       const next = nextSlot(now,{...input,...config});
       if (confirmed && next!==input.expected_at) throw new HubError(409,"次回日時が変わりました。予約を再確認してください。");
       if (libraries?.length) librarySelection(member,libraries,db);
       const prior = db.prepare("SELECT * FROM weekly_schedules WHERE actor=? AND name=?").get(actor,name);
+      const draftOrigin=draft && JSON.stringify(draft);
       if (prior) {
         if (prior.ask !== ask || prior.output_format !== format || prior.weekday !== input.weekday || prior.time !== input.time ||
+            prior.draft_origin!==draftOrigin || draft && prior.team!==member.team ||
             prior.planned_libraries !== (libraries && JSON.stringify(libraries)) || Object.keys(config).some(k => prior[k] !== config[k]))
           throw new HubError(409,"別の名前で登録してください。");
         return {id:prior.id};
       }
       const id = randomUUID();
-      db.prepare("INSERT INTO weekly_schedules(id,actor,team,name,ask,output_format,weekday,time,next_run,template_id,kind,frequency,month_day,window_days,source_kind,planned_libraries) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-        .run(id,actor,member.team,name,ask,format,input.weekday,input.time,next,config.template_id,config.kind,config.frequency,config.month_day,config.window_days,config.source_kind,libraries && JSON.stringify(libraries));
+      db.prepare("INSERT INTO weekly_schedules(id,actor,team,name,ask,output_format,weekday,time,next_run,template_id,kind,frequency,month_day,window_days,source_kind,planned_libraries,draft_origin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        .run(id,actor,member.team,name,ask,format,input.weekday,input.time,next,config.template_id,config.kind,config.frequency,config.month_day,config.window_days,config.source_kind,libraries && JSON.stringify(libraries),draftOrigin);
       return {id};
     },
     adminSchedules(actor) {
@@ -571,7 +664,7 @@ export function personalWork(hub) {
       return db.prepare("SELECT * FROM weekly_schedules WHERE actor=? AND team=? ORDER BY name,id").all(actor,member.team).map(schedule=>({
         id:schedule.id, name:schedule.name, ask:schedule.ask, enabled:Boolean(schedule.enabled), frequency:schedule.frequency,
         weekday:schedule.weekday, month_day:schedule.month_day, time:schedule.time, timezone:schedule.timezone,
-        next_run:nextOccurrence(schedule).run_at, template:Boolean(schedule.template_id), base:adminScheduleKey(schedule),
+        next_run:nextOccurrence(schedule).run_at, template:Boolean(schedule.template_id || schedule.draft_origin), base:adminScheduleKey(schedule),
       }));
     },
     saveAdminSchedule(actor,input,operator,now=Date.now()) {
@@ -589,7 +682,7 @@ export function personalWork(hub) {
         const member = activeMember(db,actor);
         const next = nextSlot(now,{frequency,weekday,month_day,time});
         const prior = id && scheduleFor(actor,id);
-        const ask = prior?.template_id ? prior.ask : field(input.ask, prior && input.ask===prior.ask ? 4000 : 500);
+        const ask = prior?.template_id || prior?.draft_origin ? prior.ask : field(input.ask, prior && input.ask===prior.ask ? 4000 : 500);
         const duplicate = db.prepare("SELECT * FROM weekly_schedules WHERE actor=? AND name=?").get(actor,name);
         if (duplicate && duplicate.id!==prior?.id) {
           if (!prior && duplicate.team===member.team && duplicate.source_kind==="plan" && duplicate.ask===ask &&
@@ -602,10 +695,11 @@ export function personalWork(hub) {
         const timingChanged = prior && (prior.frequency!==frequency || prior.weekday!==weekday || prior.month_day!==month_day || prior.time!==time);
         const toggle = prior && Boolean(prior.enabled)!==enabled;
         if (prior) {
+          if (prior.draft_origin && toggle && enabled) validateDraftScheduleSource(prior,member);
           if ((timingChanged || toggle) && db.prepare("SELECT 1 FROM schedule_occurrences WHERE schedule=?").get(id))
             throw new HubError(409,"次回分に個別設定があります。本人が次回分の確認をしてから変更してください。");
           if (!timingChanged && !toggle && name===prior.name && ask===prior.ask) return {id};
-          db.prepare(`UPDATE weekly_schedules SET name=?,ask=?,frequency=?,weekday=?,month_day=?,time=?,enabled=?,next_run=? WHERE actor=? AND id=? AND team=?`)
+          db.prepare(`UPDATE weekly_schedules SET name=?,ask=?,frequency=?,weekday=?,month_day=?,time=?,enabled=?,next_run=?,blocked_reason=NULL WHERE actor=? AND id=? AND team=?`)
             .run(name,ask,frequency,weekday,month_day,time,Number(enabled),timingChanged || toggle ? next : prior.next_run,actor,id,member.team);
         } else {
           scheduleId = this.schedule(actor,{name,ask,frequency,weekday,month_day,time,kind:"assistant",source_kind:"plan",planned_libraries:[],expected_at:next},now,true).id;
@@ -628,16 +722,22 @@ export function personalWork(hub) {
         ORDER BY same_schedule DESC,(p.kind=origin.kind) DESC,p.created DESC,p.rowid DESC`).all(id,actor);
     },
     reservationDetails(job) {
-      return db.prepare(`SELECT s.name,k.due,s.timezone,p.period_from,p.period_to FROM scheduled_jobs k
+      return db.prepare(`SELECT s.name,k.due,s.timezone,p.period_from,p.period_to,s.draft_origin IS NOT NULL AS recurring_draft FROM scheduled_jobs k
         JOIN weekly_schedules s ON s.id=k.schedule LEFT JOIN scheduled_provenance p ON p.job=k.job WHERE k.job=?`).get(job) ?? null;
     },
     previewOccurrence(actor,id,at=null) {
       const s=scheduleFor(actor,id), next=nextOccurrence(s);
       if (at !== null && (!Number.isSafeInteger(at) || !Number.isFinite(new Date(at).valueOf()))) throw new HubError(400,"日時を確認してください。");
+      const draft=JSON.parse(s.draft_origin || "null");
+      const member=draft && activeMember(db,actor);
+      const fixedSources=draft ? validateDraftScheduleSource(s,member) : [];
       if (s.source_kind==="csv") {
         return {slot:next.slot,run_at:next.run_at,revision:next.revision,name:s.name,csv:true,file:JSON.parse(next.csv_input || "null")?.name};
       }
-      return {...next,name:s.name,sources:scheduleSources(s,at ?? next.run_at).map(j=>({id:j.id,ask:j.ask}))};
+      if (s.source_kind==="quote") return {slot:next.slot,run_at:next.run_at,revision:next.revision,name:s.name,quote:true,
+        files:JSON.parse(next.quote_inputs || "[]").map(file=>file.name)};
+      return {...next,name:s.name,fixedSources,sources:scheduleSources(s,at ?? next.run_at)
+        .filter(j=>j.id!==draft?.job).map(j=>({id:j.id,ask:j.ask}))};
     },
     editOccurrence(actor,id,input,now=Date.now()) {
       return transaction(db, () => {
@@ -645,12 +745,13 @@ export function personalWork(hub) {
         if (!s.enabled || next.slot !== input.slot || next.revision !== input.revision || next.run_at<=now)
           throw new HubError(409,"次回の予定が変わりました。開き直してください。");
         if (!["skip","change"].includes(input.action)) throw new HubError(400,"操作を選んでください。");
+        if (s.draft_origin && input.action==="change") validateDraftScheduleSource(s,activeMember(db,actor));
         if (!next.revision) db.prepare("UPDATE weekly_schedules SET next_run=? WHERE id=?").run(nextSlot(next.slot,s),id);
         if (input.action === "skip") db.prepare("DELETE FROM schedule_occurrences WHERE schedule=? AND slot=?").run(id,next.slot);
         else {
           if (!Number.isSafeInteger(input.run_at) || input.run_at<=now || !Number.isFinite(new Date(input.run_at).valueOf()) ||
               !Array.isArray(input.excluded) || input.excluded.length>40) throw new HubError(400,"日時と資料を確認してください。");
-          let csvInput=null;
+          let csvInput=null,quoteInputs=null;
           if (s.source_kind==="csv") {
             const doc=input.contract || JSON.parse(next.csv_input || "null");
             const name=field(doc?.name,200), text=field(doc?.text,12000);
@@ -659,13 +760,19 @@ export function personalWork(hub) {
             if (!template) throw new HubError(404,"集計手順が見つかりません。");
             checkCsvColumns(text,JSON.parse(template.recipe));
             csvInput=JSON.stringify({name,text});
+          } else if (s.source_kind==="quote") {
+            const docs=input.quotes ?? JSON.parse(next.quote_inputs || "null");
+            if (!Array.isArray(docs) || docs.length!==2) throw new HubError(400,"この回の見積書を2件選んでください。");
+            const files=docs.map(doc=>({name:field(doc?.name,200),text:field(doc?.text,12000)}));
+            if (files[0].text===files[1].text) throw new HubError(400,"内容の異なる見積書を2件選んでください。");
+            quoteInputs=JSON.stringify(files);
           } else {
             const allowed=new Set([...next.excluded,...scheduleSources(s,next.run_at).map(j=>j.id),...scheduleSources(s,input.run_at).map(j=>j.id)]);
             if (input.excluded.some(job=>!allowed.has(job))) throw new HubError(400,"除外する資料を選び直してください。");
           }
-          db.prepare(`INSERT INTO schedule_occurrences(schedule,slot,run_at,excluded,revision,csv_input) VALUES(?,?,?,?,?,?) ON CONFLICT(schedule,slot) DO UPDATE SET
-            run_at=excluded.run_at,excluded=excluded.excluded,revision=excluded.revision,csv_input=excluded.csv_input`)
-            .run(id,next.slot,input.run_at,JSON.stringify([...new Set(input.excluded)]),next.revision+1,csvInput);
+          db.prepare(`INSERT INTO schedule_occurrences(schedule,slot,run_at,excluded,revision,csv_input,quote_inputs) VALUES(?,?,?,?,?,?,?) ON CONFLICT(schedule,slot) DO UPDATE SET
+            run_at=excluded.run_at,excluded=excluded.excluded,revision=excluded.revision,csv_input=excluded.csv_input,quote_inputs=excluded.quote_inputs`)
+            .run(id,next.slot,input.run_at,JSON.stringify([...new Set(input.excluded)]),next.revision+1,csvInput,quoteInputs);
         }
         return {ok:true};
       });
@@ -678,8 +785,9 @@ export function personalWork(hub) {
         throw new HubError(409,"この定期実行の集計手順は削除されています。");
       if (typeof enabled !== "boolean") throw new HubError(400,"利用状態を指定してください。");
       if (Boolean(schedule.enabled) !== enabled) transaction(db, () => {
+        if (enabled && schedule.draft_origin) validateDraftScheduleSource(schedule,member);
         db.prepare("DELETE FROM schedule_occurrences WHERE schedule=?").run(id);
-        db.prepare("UPDATE weekly_schedules SET enabled=?,team=?,next_run=? WHERE id=?").run(Number(enabled),member.team,nextSlot(now,schedule),id);
+        db.prepare("UPDATE weekly_schedules SET enabled=?,team=?,next_run=?,blocked_reason=NULL WHERE id=?").run(Number(enabled),member.team,nextSlot(now,schedule),id);
       });
       return {ok:true};
     },
@@ -695,7 +803,7 @@ export function personalWork(hub) {
               return;
             }
             for (const o of db.prepare("SELECT * FROM schedule_occurrences WHERE schedule=? AND run_at<=? ORDER BY run_at,slot").all(s.id,now)) {
-              if (dispatchOccurrence(s,o.slot,o.run_at,JSON.parse(o.excluded),o.csv_input)===false) return;
+              if (dispatchOccurrence(s,o.slot,o.run_at,JSON.parse(o.excluded),o)===false) return;
               db.prepare("DELETE FROM schedule_occurrences WHERE schedule=? AND slot=?").run(s.id,o.slot);
             }
             if (s.next_run>now) return;

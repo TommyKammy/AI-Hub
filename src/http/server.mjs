@@ -15,6 +15,7 @@ import http from "node:http";
 import { documentText } from "../documents/document-text.mjs";
 import { employeePreferences, profileProjection, saveEmployeePreference, writeProfileFiles } from "../workspace/employee-profile.mjs";
 import {answerInquiry,availableDesks,postInquiryFollowup,receivedInquiries,readInquiry,recordInquiryReview,registerInquiry,resolveInquiry} from "../inquiries/inquiries.mjs";
+import { draftFromScreenshot, screenshotFormats, screenshotLimit } from "../inquiries/inquiry-screenshot.mjs";
 import { mkdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
@@ -77,7 +78,9 @@ const assets = new Map(
     "/admin-dashboard.css": ["admin/admin-dashboard.css", "text/css"],
     "/app.js": ["employee/app.js", "text/javascript"],
     "/employee-inquiries.js": ["employee/employee-inquiries.js", "text/javascript"],
+    "/inquiry-screenshot.js": ["employee/inquiry-screenshot.js", "text/javascript"],
     "/work-planning.js": ["employee/work-planning.js", "text/javascript"],
+    "/answer-speech.js": ["employee/answer-speech.js", "text/javascript"],
     "/job-chat.css": ["employee/job-chat.css", "text/css"],
     "/style.css": ["shared/style.css", "text/css"],
     "/visual.js": ["shared/visual.js", "text/javascript"],
@@ -183,15 +186,16 @@ function listen(entry, port) {
     try {
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("X-Content-Type-Options", "nosniff");
-      res.setHeader(
-        "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-      );
       const host = req.headers.host;
       if (!["localhost:" + port, "127.0.0.1:" + port].includes(host))
         throw new HubError(403, "接続先が一致しません。");
       const url = new URL(req.url, "http://" + host);
       const { hostname, pathname: path } = url;
+      res.setHeader(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self';" + (path === "/" ? " img-src 'self' blob:;" : "") +
+          " frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      );
       if (path==="/internal/local-scheduler/tick") {
         if (entry!=="admin" || !cronAuthorization) throw new HubError(404,"見つかりません。");
         if (req.method!=="POST") throw new HubError(405,"POSTで起動してください。");
@@ -350,6 +354,14 @@ function listen(entry, port) {
       if (ticket && !ticket[2] && req.method==="GET") return json(readInquiry(hub.db,actor,Number(ticket[1])));
       if (ticket?.[2]==="/resolve" && req.method==="POST") return json(resolveInquiry(hub,actor,Number(ticket[1]),await body(req,32*1024)));
       if (ticket?.[2]==="/answer" && req.method==="POST") return json(answerInquiry(hub.db,actor,Number(ticket[1]),await body(req,32*1024)));
+      const screenshot=path.match(/^\/api\/jobs\/([a-z0-9-]+)\/inquiry\/([1-9]\d*)\/screenshot$/);
+      if (screenshot && req.method==="POST") {
+        const type=req.headers["content-type"];
+        if (!screenshotFormats.has(type))
+          throw new HubError(415,"画像はPNGまたはJPEGを選んでください。文章でも続けられます。");
+        const bytes=await readBytes(req,screenshotLimit);
+        return json(await draftFromScreenshot(hub,actor,screenshot[1],Number(screenshot[2]),type,bytes));
+      }
       const inquiry=path.match(/^\/api\/jobs\/([a-z0-9-]+)\/inquiry\/(prepare|review|register)$/);
       if (inquiry && req.method==="POST") {
         const input=await body(req,32*1024);
@@ -395,6 +407,8 @@ function listen(entry, port) {
       if (req.method === "POST" && path === "/api/templates") return json(personal.saveTemplate(actor, await body(req)),201);
       if (req.method === "POST" && path === "/api/procedure-favorites") return json(personal.favorite(actor,await body(req)));
       if (req.method === "POST" && path === "/api/schedules") return json(personal.schedule(actor, await body(req)),201);
+      if (req.method === "POST" && path === "/api/schedules/draft-preview") return json(personal.previewDraftSchedule(actor,await body(req)));
+      if (req.method === "POST" && path === "/api/schedules/draft-confirm") return json(personal.confirmDraftSchedule(actor,await body(req)),201);
       if (req.method === "POST" && path === "/api/reservation-plan/preview") return json(plans.preview(actor,await body(req)));
       if (req.method === "POST" && path === "/api/reservation-plan/confirm") return json(plans.confirm(actor,await body(req)),201);
       if (req.method === "POST" && path === "/api/work-split") {

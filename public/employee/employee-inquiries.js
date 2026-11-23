@@ -1,3 +1,5 @@
+import { enableScreenshot, screenshotFields } from "./inquiry-screenshot.js";
+
 export function versionReceipts(j,version) {
   const receipts=[];
   let row=j.versions.find(v=>v.version===version);
@@ -109,9 +111,11 @@ export function employeeInquiries({
       desks.map(d=>'<option value="'+esc(d.id)+'" data-recipient="'+esc(d.actor)+'">'+esc(d.name+"（"+d.contact+"）")+'</option>').join("")+'</select>'+
       '<label for="ticketSubject">件名</label><input id="ticketSubject" name="subject" class="field" maxlength="160" required value="'+esc(draft.subject)+'">'+
       '<label for="ticketBody">本文</label><textarea id="ticketBody" name="body" class="field" rows="7" maxlength="4000" required>'+esc(draft.body)+'</textarea>'+
+      screenshotFields+
       '<fieldset><legend>窓口に渡す資料の本文</legend>'+(files || "添付候補なし")+'</fieldset></fieldset>'+
       '<section data-ticket-preview hidden></section><div class="actions"><button type="button" class="secondary" data-op="edit-inquiry" hidden>編集に戻る</button>'+
       '<button class="primary" type="submit">登録内容を確認</button></div><p class="form-error" role="alert"></p></form>');
+    enableScreenshot(document.getElementById("inquiryReview"), api, showDisabled);
   }
 
   function receivedInquiryList(tickets) {
@@ -231,22 +235,31 @@ export function employeeInquiries({
     if (btn.disabled) return;
     if (!f.confirmedTicket) {
       const data=new FormData(f), attachments=data.getAll("attachment").map(Number);
+      const body=data.get("body").trim(), findings=data.get("screen_findings").trim(), steps=data.get("steps").trim();
+      const deskLabel=f.elements.desk.selectedOptions[0].text;
       const payload={version:Number(f.dataset.version),desk:data.get("desk"),recipient:f.elements.desk.selectedOptions[0].dataset.recipient,
-        subject:data.get("subject").trim(),body:data.get("body").trim(),attachments};
-      if (!payload.subject || !payload.body) {f.querySelector(".form-error").textContent="件名と本文を入力してください。"; return;}
+        subject:data.get("subject").trim(),body:[body, findings && "【画像から読み取った表示】\n"+findings,
+          steps && "【ご自身が行った操作】\n"+steps].filter(Boolean).join("\n\n"),attachments};
+      if (!payload.subject || !body) {f.querySelector(".form-error").textContent="件名と本文を入力してください。"; return;}
+      if (payload.body.length>4000) {f.querySelector(".form-error").textContent="本文と追記を合わせて4000文字以内にしてください。"; return;}
       f.querySelector(".form-error").textContent="";
       btn.disabled=true;
+      fields.disabled=true;
       try {
         const result=await api("/api/jobs/"+f.dataset.job+"/inquiry/review",{
           method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({...payload,action:"preview",expected:Number(f.dataset.reviewSeq)}),
         });
         f.dataset.reviewSeq=result.seq;
-      } catch(error) {if (!showDisabled(error)) f.querySelector(".form-error").textContent=error.message; return;}
+      } catch(error) {
+        fields.disabled=false;
+        if (!showDisabled(error)) f.querySelector(".form-error").textContent=error.message;
+        return;
+      }
       finally {btn.disabled=false;}
       const job=currentJob();
       if (!dialog.open || !f.isConnected || job?.id!==f.dataset.job) return;
-      preview.innerHTML='<h3>登録内容の確認</h3><p>宛先　'+esc(f.elements.desk.selectedOptions[0].text)+'</p><h3>'+esc(payload.subject)+'</h3><p class="note">'+esc(payload.body)+'</p>'+
+      preview.innerHTML='<h3>登録内容の確認</h3><p>宛先　'+esc(deskLabel)+'</p><h3>'+esc(payload.subject)+'</h3><p class="note">'+esc(payload.body)+'</p>'+
         '<h3>添付する資料の本文</h3>'+ticketFiles(job.sources.filter(s=>attachments.includes(s.id)));
       f.confirmedTicket={...payload,review_seq:Number(f.dataset.reviewSeq)}; fields.disabled=true; fields.hidden=true; preview.hidden=false;
       f.querySelector("[data-op=edit-inquiry]").hidden=false; btn.textContent="この内容で起票"; btn.focus(); return;

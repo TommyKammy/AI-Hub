@@ -15,6 +15,7 @@ import {answerSourceId,answerSources,inquiryVersions,migrateInquiries,parseInqui
 import { current } from "../../skills/renewal-brief/releases.mjs";
 import { currentStandardProcedure, findStandardProcedureVersion, migrateStandardProcedures, standardProcedureVersion } from "../procedures/standard-procedures.mjs";
 import { deliveredTo, draftForJob, formatSharedMemo, migrateProcedures, procedureVersion, quoteProcedure, resolvePublished } from "../procedures/procedures.mjs";
+import { assertDraftSources } from "./recurring-drafts.mjs";
 import { catalogProcedureReference, requireRevisionProcedure, resolveAppliedProcedure } from "../procedures/applied-procedure.mjs";
 
 import { migrateCatalog, HubError, frameInput } from "../models/catalog.mjs";
@@ -118,6 +119,8 @@ export function openHub(path) {
     }
     if (!db.prepare("PRAGMA table_info(jobs)").all().some(column => column.name === "adopted_version"))
       db.exec("ALTER TABLE jobs ADD COLUMN adopted_version INTEGER");
+    if (!db.prepare("PRAGMA table_info(jobs)").all().some(column => column.name === "recurring_draft"))
+      db.exec("ALTER TABLE jobs ADD COLUMN recurring_draft TEXT");
     db.exec(`CREATE INDEX IF NOT EXISTS reports_by_origin ON jobs(actor,json_extract(sources_json,'$[1].job'))
       WHERE json_extract(sources_json,'$[0].period')='前回'`);
     db.exec(`CREATE TABLE IF NOT EXISTS run_reconciliations(
@@ -208,16 +211,17 @@ export function openHub(path) {
   // Once a memo contains a desk's answer, it has the same team boundary as its receipt.
   db.exec(`CREATE TABLE IF NOT EXISTS deleted_jobs(job TEXT PRIMARY KEY REFERENCES jobs(id));
     CREATE TABLE IF NOT EXISTS deleted_quote_skills(skill TEXT PRIMARY KEY REFERENCES quote_skills(id))`);
-  const readableJob=`j.id NOT IN (SELECT job FROM deleted_jobs) AND (j.id IN (SELECT id FROM permitted_job_teams) OR (j.library_selection IS NULL AND j.csv_skill IS NULL AND j.quote_skill_id IS NULL
+  const readableJob=`j.id NOT IN (SELECT job FROM deleted_jobs) AND (j.id IN (SELECT id FROM permitted_job_teams) OR (j.recurring_draft IS NULL AND j.library_selection IS NULL AND j.csv_skill IS NULL AND j.quote_skill_id IS NULL
     AND NOT EXISTS (SELECT 1 FROM arrival_waits a WHERE a.job=j.id AND a.started_at IS NOT NULL)
     AND NOT EXISTS (SELECT 1 FROM memo_versions v WHERE v.job_id=j.id AND
       (v.applied_procedure IS NOT NULL OR (v.answer_inquiry IS NOT NULL AND v.memo IS NOT NULL)))))`;
   const find = (actor, id) => {
-    activeMember(db, actor);
+    const member=activeMember(db, actor);
     const row = db
       .prepare(`SELECT j.* FROM jobs j WHERE j.actor=? AND j.id=? AND ${readableJob}`)
       .get(actor, id);
     if (!row || !splitJobPermitted(db,id,actor)) throw new HubError(404, "依頼が見つかりません。");
+    if (row.recurring_draft) assertDraftSources(db,member,{jobs:[row.id]});
     return row;
   };
   function memoVersions(j) {
@@ -253,7 +257,7 @@ export function openHub(path) {
       activeMember(db, actor);
       return db
         .prepare(
-          `SELECT id, company, kind, ask, created, scheduled_at, status, phase,
+          `SELECT id, company, kind, ask, created, scheduled_at, status, phase, recurring_draft IS NOT NULL AS recurring_draft,
             (SELECT MAX(seq) FROM job_notifications n WHERE n.job=j.id AND n.status='done') AS done_seq,
             COALESCE((SELECT done_seq FROM job_views v WHERE v.job=j.id),0) AS viewed_seq,
             COALESCE(adopted_version,(SELECT MAX(version) FROM memo_versions v WHERE v.job_id=j.id AND v.memo IS NOT NULL),1) AS memo_version,
@@ -305,9 +309,10 @@ export function openHub(path) {
       return {job:event.job};
     },
     search(actor, query) {
-      activeMember(db, actor);
+      const member=activeMember(db, actor);
       const terms = JSON.stringify(query.trim().split(/\s+/).filter(Boolean));
-      const rows = db.prepare(`SELECT id,company,kind,ask,created,scheduled_at,status,phase,library_selection IS NULL AS can_preview_result FROM jobs j
+      const rows = db.prepare(`SELECT id,company,kind,ask,created,scheduled_at,status,phase,recurring_draft IS NOT NULL AS recurring_draft,
+        library_selection IS NULL AS can_preview_result FROM jobs j
         WHERE actor=$actor AND ${readableJob} AND NOT EXISTS (SELECT 1 FROM json_each($terms) term WHERE NOT (
           instr(lower((CASE WHEN kind='renewal' THEN company ELSE '' END) || ' ' || ask || ' ' || COALESCE(memo,'') ||
             ' ' || COALESCE(question,'') || ' ' || COALESCE(answer,'')),lower(term.value))>0
@@ -329,7 +334,17 @@ export function openHub(path) {
         UNION ALL SELECT '成果物 第'||version||'版', memo FROM memo_versions WHERE job_id=$id AND $preview
         UNION ALL SELECT '成果物', memo FROM jobs WHERE id=$id AND $preview
       ) CROSS JOIN json_each($terms) term WHERE instr(lower(body),lower(term.value))>0 LIMIT 1`);
-      return rows.filter(row => splitJobPermitted(db,row.id,actor)).map(({can_preview_result:preview,...row}) => {
+      return rows.filter(row => {
+        if (!splitJobPermitted(db,row.id,actor)) return false;
+        if (row.recurring_draft) {
+          try { assertDraftSources(db,member,{jobs:[row.id]}); }
+          catch (error) {
+            if (!(error instanceof HubError) || error.status!==403) throw error;
+            return false;
+          }
+        }
+        return true;
+      }).map(({can_preview_result:preview,...row}) => {
         const result = query && excerpts.get({id:row.id,terms,preview});
         if (!result) return row;
         const at = result.body.replace(/[A-Z]/g, c => c.toLowerCase()).indexOf(result.keyword.replace(/[A-Z]/g, c => c.toLowerCase()));
@@ -350,7 +365,7 @@ export function openHub(path) {
     },
     get(actor, id) {
       const row = find(actor, id);
-      const { request_key, actor: owner, sources_json, standard_editions, ...j } = row;
+      const { request_key, actor: owner, sources_json, standard_editions, recurring_draft, ...j } = row;
       const versions = memoVersions(j);
       const pendingRevision = /^revise-\d+$/.test(j.phase) && ["queued","dispatching","running"].includes(j.status)
         ? db.prepare("SELECT version,instruction FROM memo_versions WHERE job_id=? AND version=? AND memo IS NULL").get(id,Number(j.phase.slice(7))) : null;
@@ -386,7 +401,7 @@ export function openHub(path) {
         const candidates=resolutionCandidates(versions,j.adopted_version);
         for (const t of inquiries) if (!t.resolution && candidates.has(t.id)) t.resolution_candidate=candidates.get(t.id);
       }
-      return { ...j, ...(wait && {arrival_wait:wait}), ...(pendingRevision && {pending_revision:pendingRevision}), inquiries, csv_skill:JSON.parse(j.csv_skill || "null"), library_selection:JSON.parse(j.library_selection || "[]"), model, comparisons, work_tool:workTool, candidate_sets: j.kind === "meeting" ? db.prepare("SELECT version,result FROM action_candidates WHERE job=? AND result IS NOT NULL").all(id)
+      return { ...j, recurring_draft:Boolean(recurring_draft), ...(wait && {arrival_wait:wait}), ...(pendingRevision && {pending_revision:pendingRevision}), inquiries, csv_skill:JSON.parse(j.csv_skill || "null"), library_selection:JSON.parse(j.library_selection || "[]"), model, comparisons, work_tool:workTool, candidate_sets: j.kind === "meeting" ? db.prepare("SELECT version,result FROM action_candidates WHERE job=? AND result IS NOT NULL").all(id)
         .map(row => ({version:row.version,items:JSON.parse(row.result)})) : [], reminder_at:j.status === "waiting" ? db.prepare("SELECT due FROM question_reminders WHERE job=?").get(id)?.due : null, skill_name: procedure?.name ?? standard?.name ?? workspaceTasks.get(j.kind)?.name ?? skill.name,
         ...(standard && {standard_procedure:standardIdentity(standard)}),
         ...(j.status === "closed_unconfirmed" && {closure_reason:
@@ -1258,7 +1273,7 @@ export function createWorker(db, call, runtimeForActor = () => null) {
       db.prepare("UPDATE jobs SET status='queued' WHERE status='scheduled' AND scheduled_at<=?").run(Date.now());
       const rows = db
         .prepare(
-          `SELECT j.id,j.actor,j.scope_team,j.model_version,j.kind,j.status,j.phase,j.run_id,j.library_selection,j.data_class,a.runtime_id
+          `SELECT j.id,j.actor,j.scope_team,j.model_version,j.kind,j.status,j.phase,j.run_id,j.library_selection,j.recurring_draft,j.data_class,a.runtime_id
            FROM jobs j JOIN memberships m ON m.actor=j.actor LEFT JOIN attempts a ON a.job_id=j.id AND a.phase=j.phase
            WHERE m.active=1 AND j.status IN ('queued','running') ORDER BY j.created`,
         )
@@ -1276,6 +1291,14 @@ export function createWorker(db, call, runtimeForActor = () => null) {
           const dispatch = transaction(db, () => {
             if (blockingJob.get(j.actor,j.id,j.id)) return;
             if (!claimArrival(db,j)) return;
+            if (j.recurring_draft) {
+              try { assertDraftSources(db,activeMember(db,j.actor),{jobs:[j.id]}); }
+              catch (error) {
+                if (!(error instanceof HubError) || error.status!==403) throw error;
+                db.prepare("UPDATE jobs SET status='source_blocked' WHERE id=? AND status='queued'").run(j.id);
+                return;
+              }
+            }
             if (j.library_selection) {
               const selection=JSON.parse(j.library_selection), ids=selection.map(folder=>folder.id);
               try { if (ids.length) librarySelection(activeMember(db,j.actor),ids,db,selection[0]?.document); }
@@ -1415,6 +1438,8 @@ export function createWorker(db, call, runtimeForActor = () => null) {
               ? "ただし、ask 自体が今後の回答への希望を覚える依頼なら、業務手順の代わりに最初に memory を呼ぶ。target=user、operations は action=add と本人の希望を表す content の一項目。保存結果を受け取ってから返答する。"
               : context.may_search_libraries ? "社内の規程・用語・申請案内についての質問で資料がない場合は source-answer を選び、search_libraries で規程名・略語・業務用語を検索してから read_passages で確認する。旧版や別文書と記載が食い違う場合は根拠を両方示して要確認と書く。資料と無関係な依頼には検索を使わない。" : "";
             const fixedWorkflow=context.standard_workflow ? "\n利用者が選んだ標準手順は "+context.standard_workflow+"。load_workflow にこの名前を渡し、この手順で実行する。" : "";
+            const recurringInstructions=j.recurring_draft && j.phase==="compose" ?
+              "\n成果物は本人の依頼一覧に保存する下書き。送信や登録をせず、確認用の本文を作成する。採用済みの週報を参照する場合は構成と文体だけを引き継ぎ、当時の事実を今回の実績に含めない。" : "";
             const publishedInstructions = context.team_quote ? "\n公開済みのチーム手順を使い load_workflow(work, quote-comparison) を呼ぶ。compare_quotes には team_quote.criteria の項目を同じ順に渡して、今回の2社の見積を比較する。" : "";
             const appliedInstructions=applied?.quoteSkill ? "\nload_workflow(work, quote-comparison) で本人用の比較手順を開き、保存した比較項目を元の順にすべて使う。" :
               context.catalog_instruction ? "\n選択した手順の catalog_instruction と今回の revision_instruction を適用する。原資料と出典番号を保持し、output_format があれば維持する。" : "";
@@ -1426,7 +1451,7 @@ export function createWorker(db, call, runtimeForActor = () => null) {
               body: JSON.stringify({
                 session_id: "hub-" + j.id + "-" + j.phase,
                 input: frame,
-                instructions: arrivalComparison ? comparisonInstructions : learning ? "採用済みのadopted_memoとrevision_instructionから、次の2社の見積でも再利用する比較項目名を採用版の順に抽出する。rulesには今回の数値や取引先を含まない判断ルールをrevision_instructionから原文のまま抜き出す。例：未記載の場合の扱い、月額と初期費用の区別。判断ルールがなければ空配列。金額の値・会社名・日付・出典番号は保存しない。今回のwork、criteria、rulesでsave_quote_skillを1回呼び、結果を受けて終了する。" : (j.quote_skill_id && j.phase==="compose" ? "最初にload_workflow(work, quote-comparison)で指定された個人スキルを開く。その本文にある比較項目を同じ名前・同じ順番でcompare_quotesに渡す。各項目の左右のrefは今回の見積のpassagesから選び、記載なしは空文字。比較表を出力する。" : context.csv_skill ? "本人が保存したCSV集計手順を実行する。最初にload_workflowに今回のworkとname=csv-summaryを渡し、次にaggregate_csvを今回のworkだけで呼ぶ。保存済みの集計条件はツールが適用する。結果を受け取ったら呼び出しを終了し、出典付きの集計結果を返す。" : context.libraries ? "社内資料への質問。まずload_workflow(work, source-answer)、次にsearch_librariesで質問に合う検索語を渡す。検索結果が0件なら調査は完了。ツール呼び出しを終了し、該当なしと回答する。候補があるときだけ必要な資料のrefをread_passagesで確認する。候補が質問と無関係ならrefs=[]を渡す。それから日本語で質問に答え、各事実の文末に根拠の資料番号 [1] 等を付ける。資料にない手続きや期限を加えない。" : instructions) + "\n" + profileInstructions + fixedWorkflow + publishedInstructions + appliedInstructions + (j.output_format && ["compose","draft"].includes(j.phase) ? "\n仕上がりは output_format の指定に従い、出典番号を保持する。" : ""),
+                instructions: arrivalComparison ? comparisonInstructions : learning ? "採用済みのadopted_memoとrevision_instructionから、次の2社の見積でも再利用する比較項目名を採用版の順に抽出する。rulesには今回の数値や取引先を含まない判断ルールをrevision_instructionから原文のまま抜き出す。例：未記載の場合の扱い、月額と初期費用の区別。判断ルールがなければ空配列。金額の値・会社名・日付・出典番号は保存しない。今回のwork、criteria、rulesでsave_quote_skillを1回呼び、結果を受けて終了する。" : (j.quote_skill_id && j.phase==="compose" ? "最初にload_workflow(work, quote-comparison)で指定された個人スキルを開く。その本文にある比較項目を同じ名前・同じ順番でcompare_quotesに渡す。各項目の左右のrefは今回の見積のpassagesから選び、記載なしは空文字。比較表を出力する。" : context.csv_skill ? "本人が保存したCSV集計手順を実行する。最初にload_workflowに今回のworkとname=csv-summaryを渡し、次にaggregate_csvを今回のworkだけで呼ぶ。保存済みの集計条件はツールが適用する。結果を受け取ったら呼び出しを終了し、出典付きの集計結果を返す。" : context.libraries ? "社内資料への質問。まずload_workflow(work, source-answer)、次にsearch_librariesで質問に合う検索語を渡す。検索結果が0件なら調査は完了。ツール呼び出しを終了し、該当なしと回答する。候補があるときだけ必要な資料のrefをread_passagesで確認する。候補が質問と無関係ならrefs=[]を渡す。それから日本語で質問に答え、各事実の文末に根拠の資料番号 [1] 等を付ける。資料にない手続きや期限を加えない。" : instructions) + "\n" + profileInstructions + fixedWorkflow + publishedInstructions + appliedInstructions + recurringInstructions + (j.output_format && ["compose","draft"].includes(j.phase) ? "\n仕上がりは output_format の指定に従い、出典番号を保持する。" : ""),
               }),
             }, dispatch.runtime);
             if (typeof result.run_id !== "string" || !result.run_id)
@@ -1470,6 +1495,14 @@ export function createWorker(db, call, runtimeForActor = () => null) {
           if (!employeeGroupAllows(db,latest.actor,modelForVersion(db,latest.model_version))) {
             db.prepare("UPDATE jobs SET status='membership_blocked' WHERE id=?").run(j.id);
             return;
+          }
+          if (latest.recurring_draft) {
+            try { assertDraftSources(db,activeMember(db,latest.actor),{jobs:[latest.id]}); }
+            catch (error) {
+              if (!(error instanceof HubError) || error.status!==403) throw error;
+              db.prepare("UPDATE jobs SET status='source_blocked' WHERE id=? AND status='running'").run(latest.id);
+              return;
+            }
           }
           applyRunResult(db,latest,run);
         });

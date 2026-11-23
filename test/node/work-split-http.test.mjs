@@ -35,12 +35,14 @@ test("出典版の失効を実際の社員HTTP入口と再実行の経路で拒�
   await writeFile(join(folder,"残る資料.txt"),"失効後も閲覧できる別資料。");
   process.env.LIBRARY_ROOT=libraries;
   const hub=openHub(file);
-  let parent, childId, failedId;
+  let origin, parent, childId, failedId;
   try {
-    const origin=hub.create("sato",{company:"A社",kind:"assistant",ask:"規程の検索",library_ids:["shared/合成資料"]},randomUUID());
+    origin=hub.create("sato",{company:"A社",kind:"assistant",ask:"規程の検索",library_ids:["shared/合成資料"]},randomUUID());
     hub.db.prepare("UPDATE jobs SET status='done',memo='完了 [1]',sources_json=? WHERE id=?").run(JSON.stringify([
       {id:1,title:"原文.txt",version:"検索時の版",text:fixtureText,library:"shared/合成資料"},
     ]),origin);
+    hub.db.prepare("INSERT INTO inquiry_drafts(job,version,phase,result,screenshot_review_required) VALUES(?,1,?,?,1)")
+      .run(origin,"inquiry-"+randomUUID(),JSON.stringify({subject:"合成案",body:"Upload failed",attachments:[]}));
     const split=groupWork(hub);
     parent=split.create("sato",{origin,ask:"規程の分担",maxParallel:2,maxRuns:3,maxCalls:10,
       parts:[{name:"調査",instructions:"出典の確認"},{name:"点検",instructions:"未確認事項"}]},randomUUID()).id;
@@ -66,10 +68,19 @@ test("出典版の失効を実際の社員HTTP入口と再実行の経路で拒�
     await delay(50);
   }
   const endpoint=id=>employee+"/api/jobs/"+id;
+  const post=(path,input)=>fetch(path,{method:"POST",headers:{Origin:employee,"Content-Type":"application/json"},body:JSON.stringify(input)});
   assert.equal((await fetch(endpoint(parent)).then(response=>response.json())).distribution.parts[0].summary,fixtureText+" [1]");
   assert.equal((await fetch(endpoint(childId)).then(response=>response.json())).sources[0].text,fixtureText);
+  const inquiry=endpoint(origin)+"/inquiry/", ticket={version:1,desk:"operations",recipient:"tanaka",subject:"合成案",
+    body:"【画像から読み取った表示】\nUpload failed",attachments:[1]};
+  const preview=await post(inquiry+"review",{...ticket,action:"preview",expected:0});
+  assert.equal(preview.status,200);
+  const {seq}=await preview.json();
   await rm(original);
   await writeFile(original,"閲覧できるようにしても以前と異なる版。");
+  const expired=await post(inquiry+"register",{...ticket,review_seq:seq});
+  assert.equal(expired.status,409);
+  assert.match((await expired.json()).error,/添付候補の出典が失効/);
   const workspace=await fetch(employee+"/api/workspace").then(response=>response.json());
   assert.equal(workspace.libraries[0].id,"shared/合成資料");
   assert.ok(!JSON.stringify(workspace).includes(fixtureText));
@@ -88,6 +99,7 @@ test("出典版の失効を実際の社員HTTP入口と再実行の経路で拒�
   const snapshot=new DatabaseSync(file,{readOnly:true});
   try {
     assert.equal(snapshot.prepare("SELECT count(*) AS n FROM attempts").get().n,0);
+    assert.equal(snapshot.prepare("SELECT count(*) AS n FROM inquiries").get().n,0);
     assert.equal(snapshot.prepare("SELECT aggregate FROM split_plans WHERE parent=?").get(parent).aggregate,null);
     assert.equal(snapshot.prepare("SELECT generation FROM split_parts WHERE parent=? AND position=2").get(parent).generation,1);
   } finally {snapshot.close();}

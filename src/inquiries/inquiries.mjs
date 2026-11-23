@@ -41,6 +41,8 @@ export function migrateInquiries(db) {
     CREATE VIEW IF NOT EXISTS inquiry_reply_notifications AS
       SELECT inquiry,notification,NULL AS round FROM inquiry_answers
       UNION ALL SELECT inquiry,notification,number FROM inquiry_followups WHERE notification IS NOT NULL;`);
+  if (!db.prepare("PRAGMA table_info(inquiry_drafts)").all().some(c=>c.name==="screenshot_review_required"))
+    db.exec("ALTER TABLE inquiry_drafts ADD COLUMN screenshot_review_required INTEGER NOT NULL DEFAULT 0");
   // Reserve every legacy ticket's original citation before numbering any rounds.
   transaction(db,()=>{
     if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inquiry_citations'").get()) return;
@@ -167,11 +169,13 @@ export function registerInquiry(hub,actor,jobId,input) {
       return {id:prior.id};
     }
     if (!usagePolicy(db).settings.inquiry) throw new HubError(403,"利用ポリシーにより窓口への新規起票を停止しています。");
-    if (!job.inquiries.some(i=>i.version===version)) throw new HubError(409,"この版の起票案を先に作成してください。");
+    const draft=db.prepare("SELECT result,screenshot_review_required FROM inquiry_drafts WHERE job=? AND version=?").get(jobId,version);
+    if (!draft?.result) throw new HubError(409,"この版の起票案を先に作成してください。");
     const target=availableDesks(db).find(d=>d.id===desk);
     if (!target || target.actor!==input.recipient) throw new HubError(409,"窓口の受付状況が変わりました。画面を更新して宛先を確認してください。");
     const review=inquiryReview(db,jobId,version), fingerprint=reviewFingerprint(input);
-    if (review && (!["preview","resubmitted"].includes(review.action) || review.seq!==input.review_seq || review.content!==fingerprint))
+    if ((draft.screenshot_review_required || review) &&
+        (!["preview","resubmitted"].includes(review?.action) || review.seq!==input.review_seq || review.content!==fingerprint))
       throw new HubError(409,"確認した起票内容と一致しません。開き直して確認してください。");
     appendReview(db,jobId,version,actor,"approved",fingerprint);
     const row=db.prepare(`INSERT INTO inquiries(job,version,created,desk,desk_name,recipient,recipient_team,subject,body,attachments)

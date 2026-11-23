@@ -68,6 +68,9 @@
 .job-artifact:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .job-artifact .actions { gap: 6px 8px; }
 .job-artifact .actions .secondary { padding: 6px 10px; font-size: .86rem; }
+.answer-speech { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-block: 12px; }
+.answer-speech button { min-block-size: 44px; padding-block: 6px; }
+.answer-speech small { display: block; overflow-wrap: anywhere; }
 .job-record { margin-block: 16px; border-top: 1px solid var(--line); padding-block: 10px; }
 .job-record > summary { color: var(--muted); font-size: .9rem; }
 .job-record-content { padding-block-start: 12px; overflow-wrap: anywhere; }

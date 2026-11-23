@@ -14,6 +14,8 @@ import { quoteProcedure, resolvePublished } from "../procedures/procedures.mjs";
 import { requireRevisionProcedure } from "../procedures/applied-procedure.mjs";
 import { standardProcedureVersion } from "../procedures/standard-procedures.mjs";
 import { readFileSync } from "node:fs";
+import { assertDraftSources } from "../jobs/recurring-drafts.mjs";
+import { activeMember } from "../identity/memberships.mjs";
 
 const workflowTools = new Map([
   ["csv-summary", "aggregate_csv"],
@@ -76,6 +78,10 @@ function savedUserPreference(messages) {
 // attempt identifier is supplied by the worker outside the user input frame.
 export function listenGateway(db, actor, host, port = 18800) {
   const readReceipt = receiptClient();
+  const isRecurring=db.prepare("SELECT recurring_draft FROM jobs WHERE id=?");
+  function verifyDraft(id) {
+    if (isRecurring.get(id)?.recurring_draft) assertDraftSources(db,activeMember(db,actor),{jobs:[id]});
+  }
   const route =
     db.prepare(`SELECT j.id job,j.kind,j.phase,j.status,j.model_version,j.data_class,j.skip_profile,j.profile_project,j.profile_snapshot,m.id,m.connection,m.model_id
     FROM attempts a JOIN jobs j ON j.id=a.job_id AND j.phase=a.phase
@@ -124,6 +130,7 @@ export function listenGateway(db, actor, host, port = 18800) {
             JOIN model_releases r ON r.version=j.model_version JOIN models m ON m.id=r.model AND m.stopped=0
             WHERE s.ticket=? AND j.actor=? AND j.status IN ('running','dispatching') AND j.id IN (SELECT id FROM permitted_job_teams)`).get(payload.ticket,actor);
           if (!skill) {res.writeHead(403); return res.end();}
+          verifyDraft(skill.job);
           if (!employeeGroupAllows(db,actor,skill)) {res.writeHead(403);return res.end();}
           if (modelPolicyDenial(release,{id:skill.model,connection:skill.connection,data_class:skill.model_data_class},skill.data_class)) {
             res.writeHead(423); return res.end();
@@ -171,6 +178,7 @@ export function listenGateway(db, actor, host, port = 18800) {
           AND j.status IN ('running','dispatching') AND j.id IN (SELECT id FROM permitted_job_teams)`);
         const row = typeof payload.ticket === "string" && permitted.get({ticket:payload.ticket,actor});
         if (!row) {res.writeHead(403); return res.end();}
+        verifyDraft(row.id);
         if (!employeeGroupAllows(db,actor,row)) {res.writeHead(403);return res.end();}
         const applied=requireRevisionProcedure(db,actor,row.id,row.phase);
         const teamQuote=applied?.teamQuote || (!row.version && row.procedure_id && quoteProcedure(resolvePublished(db,actor,row.procedure_id,row.skill_hash)));
@@ -201,12 +209,14 @@ export function listenGateway(db, actor, host, port = 18800) {
           const saved=transaction(db,()=>{
             const current=permitted.get({ticket:payload.ticket,actor});
             if (!current) return null;
+            verifyDraft(row.id);
             if (!employeeGroupAllows(db,actor,current)) return null;
             if (modelPolicyDenial(usagePolicy(db),{id:current.model,connection:current.connection,data_class:current.model_data_class},current.data_class)) return null;
             if (current.library_hits) return current.library_hits;
             const selection=ids.length ? librarySelection({actor,team:current.team},ids,db,document) : [];
             db.prepare("UPDATE jobs SET sources_json=?,library_selection=? WHERE id=?")
               .run(JSON.stringify(sources),JSON.stringify(selection),row.id);
+            verifyDraft(row.id);
             const emptyResult=matches.length ? null : JSON.stringify({tool:"search_libraries",workflow:JSON.parse(current.workflow),
               conditions:[],evidence:[],memo:"検索結果は0件です。"});
             db.prepare("UPDATE work_tool_results SET library_hits=?, result=? WHERE job=?").run(hits,emptyResult,row.id);
@@ -374,6 +384,7 @@ export function listenGateway(db, actor, host, port = 18800) {
         };
       let reply;
       try {
+        verifyDraft(target.job);
         reply = await measuredSend(
           db,
           target,
