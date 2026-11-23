@@ -72,6 +72,10 @@ test("本人記憶の変更・削除・案件範囲を、再起動後も通常�
   const native=[{role:"assistant",tool_calls:[{id:"native",function:{name:"memory",
     arguments:JSON.stringify({target:"user",operations:[{action:"add",content:"結論を先に書く。"}]})}}]},
   {role:"tool",tool_call_id:"native",content:'{"success":true,"done":true,"target":"user"}'}];
+  await infer("sato","次回の会議について今回は結論を先に書いてください。",emptyNative,{},native);
+  await infer("sato","次回は北社の見積について結論を先に書いて。",emptyNative,{},native);
+  await infer("sato","今後は北社の見積について箇条書きで回答してください。",emptyNative,{},native);
+  assert.deepEqual(employeePreferences(hub.db,"sato"),[]);
   const origin=await infer("sato","次回から結論を先に書いてください。",emptyNative,{},native);
   const [saved]=employeePreferences(hub.db,"sato");
   assert.equal(saved.source_job,origin.id);
@@ -105,4 +109,25 @@ test("本人記憶の変更・削除・案件範囲を、再起動後も通常�
   assert.doesNotMatch(forgotten.text,/^結論/);
   assert.doesNotMatch(requests.at(-1),/結論を先に|要点を三つ|旧版の案件|定例会議/);
   assert.throws(()=>saveEmployeePreference(hub.db,"sato",{source_job:origin.id,content:saved.content}),{status:409});
+  const explicit=await infer("sato","結論を先に書く好みを覚えてください。",emptyNative,{},native);
+  assert.equal(employeePreferences(hub.db,"sato").find(item=>item.content===saved.content)?.source_job,explicit.id);
+});
+
+test("版を指定した好みは案件の前提と共存し、削除後の再確認だけを新規に保存できる", t=>{
+  const hub=openHub(":memory:");
+  t.after(()=>hub.close());
+  const job=hub.create("sato",{kind:"assistant",company:"A社",ask:"会議の結果をまとめて。"},randomUUID());
+  const project=personalWork(hub).fileInProject("sato",job,{name:"案件資料"});
+  const scoped=saveEmployeePreference(hub.db,"sato",{project:project.id,source_job:job,content:"会議の前提を保持する。"});
+  const input={source_job:job,source_version:1,content:"結論を先に書く。"};
+  const key=randomUUID();
+  const saved=saveEmployeePreference(hub.db,"sato",input,key);
+  assert.deepEqual(saveEmployeePreference(hub.db,"sato",input,key),{...saved});
+  assert.throws(()=>saveEmployeePreference(hub.db,"sato",{...input,content:"書式を変える。"},key),{status:409});
+  assert.throws(()=>saveEmployeePreference(hub.db,"tanaka",input,key),{status:404});
+  assert.deepEqual(new Set(employeePreferences(hub.db,"sato").map(item=>item.id)),new Set([scoped.id,saved.id]));
+  saveEmployeePreference(hub.db,"sato",{...saved,deleted:true});
+  assert.throws(()=>saveEmployeePreference(hub.db,"sato",input,key),{status:409});
+  const replacement=saveEmployeePreference(hub.db,"sato",input,randomUUID());
+  assert.notEqual(replacement.id,saved.id);
 });

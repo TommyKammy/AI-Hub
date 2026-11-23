@@ -373,7 +373,15 @@ function listen(entry, port) {
         const input=await body(req);
         if (!usagePolicy(hub.db).settings.memory && input.deleted!==true)
           throw new HubError(403,"利用ポリシーにより記憶の追加・更新を停止しています。");
-        const saved=saveEmployeePreference(hub.db,actor,input);
+        if (input.source_version!==undefined && input.deleted!==true) {
+          if (typeof input.source_job!=="string" || !Number.isSafeInteger(input.source_version) || input.source_version<1)
+            throw new HubError(400,"好みを保存する元の仕事と版を確認してください。");
+          const job=hub.get(actor,input.source_job);
+          if (job.team_denied || job.procedure_revoked || !["done","failed"].includes(job.status) ||
+            !job.versions.some(version=>version.version===input.source_version))
+            throw new HubError(404,"好みを保存する元の成果物が見つかりません。");
+        }
+        const saved=saveEmployeePreference(hub.db,actor,input,req.headers["idempotency-key"]);
         writeProfileFiles(hub.db,actor,dir);
         return json(saved);
       }

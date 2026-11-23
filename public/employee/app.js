@@ -384,7 +384,8 @@ function profileContent(items) {
   const manage=items.map(item=>'<article class="preference-entry"><form class="preferenceForm" data-preference="'+esc(item.id)+'" data-revision="'+item.revision+'">'+
     '<label class="formlabel">'+esc(item.project ? workspace.projects.find(project=>project.id===item.project)?.name || "案件の前提" : "本人の好み")+
     '<textarea class="field" name="content" maxlength="280" required>'+esc(item.content)+'</textarea></label>'+
-    (item.source_job && workspace.jobs.some(job=>job.id===item.source_job) ? button("記憶の元の仕事","job/"+item.source_job,"link") : "")+
+    (item.source_job && workspace.jobs.some(job=>job.id===item.source_job) ? button("記憶の元の仕事",
+      "job/"+item.source_job+(item.source_version ? "/version/"+item.source_version : ""),"link") : "")+
     '<div class="actions"><button value="save" class="secondary" '+(!workspace.memory_enabled ? 'disabled' : '')+'>変更を保存</button>'+
     '<button value="delete" class="secondary" formnovalidate>忘れる</button></div><p class="form-error" role="alert"></p></form></article>').join("");
   const add=workspace.memory_enabled ? '<details><summary>記憶を追加</summary><form class="preferenceForm">'+
@@ -396,6 +397,16 @@ function profileContent(items) {
 }
 function showProfile(items) {
   modal("Hermesが覚えていること",profileContent(items));
+}
+function showAnswerPreference(current,version) {
+  modal("この回答の好みを今後も使う",'<form id="saveAnswerPreference" data-job="'+esc(current.id)+'" data-version="'+version+'">'+
+    '<p id="answerPreferenceHelp">第'+version+'版を見て、次の依頼でも使いたい書き方や形式を入力してください。</p>'+
+    '<label class="formlabel" for="answerPreferenceText">覚えておく内容</label>'+
+    '<textarea class="field" id="answerPreferenceText" name="content" maxlength="280" required aria-describedby="answerPreferenceHelp"'+
+    ' placeholder="例：結論を先に書く"></textarea>'+
+    '<div class="actions"><button class="primary">記憶を保存</button><a href="#work/memory">Hermesの記憶を開く</a></div>'+
+    '<p class="form-error" role="alert"></p></form>');
+  $("#answerPreferenceText").focus();
 }
 function list(items) {
   return (
@@ -1038,6 +1049,7 @@ function memoPanel(j, version = displayedVersion(j)) {
     (result?.table ? quoteTable(j,result.table,version) : '<p class="doc-body" id="memoText">' + inquiries.citationText(selected.memo, j,version) + '</p>') +
     workEvidence(result, standardProcedure) + delta + compare + '<div class="actions">' +
     '<button type="button" class="secondary" command="--copy" commandfor="memoText">出典付きでコピー</button>' +
+    (editable && workspace.memory_enabled ? button("今後も使う","remember-answer/"+version) : "") +
     (j.kind === "meeting" && !j.team_denied ? button("宿題を登録","track/" + version,"secondary") + button(j.candidate_sets.some(s=>s.version===version) ? "宿題候補を確認" : "宿題候補を抽出","candidates/"+version,"secondary") : "") + button("Markdownで保存", "export-memo", "secondary") + (!j.team_denied && !j.sources[0]?.period ? button("前回の報告と比較","report-diff/"+version,"secondary") : "") + button("同僚に共有", "share/" + version, "secondary") + adopt +
     (editable && consultationCatalog(j,version).eligible.length ? button("この相談で使う","apply-catalog/"+version,"secondary") : "")+
     inquiries.inquiryButton(j,version,workspace.inquiry_desks)+'<small id="copyStatus" role="status"></small></div>' + savedQuote + comparisons;
@@ -1706,6 +1718,12 @@ document.addEventListener("click", async (e) => {
     catch(error) {if (!showDisabled(error)) notice(error.message);}
     return;
   }
+  if (op.startsWith("remember-answer/")) {
+    const version=Number(op.slice("remember-answer/".length));
+    if (workspace.memory_enabled && job && acceptsJobFollowup(job) && job.versions.some(item=>item.version===version))
+      showAnswerPreference(job,version);
+    return;
+  }
   if (op.startsWith("catalog-filter/")) {
     catalogFilter.group=op.slice("catalog-filter/".length);
     for (const filter of b.parentElement.children) filter.setAttribute("aria-pressed",String(filter===b));
@@ -2245,6 +2263,29 @@ document.addEventListener("click", async (e) => {
 });
 document.addEventListener("submit", async (e) => {
   const f = e.target;
+  if (f.id==="saveAnswerPreference") {
+    e.preventDefault();
+    const submit=f.querySelector("button");
+    if (submit.disabled) return;
+    const content=f.elements.content.value.trim();
+    if (f.dataset.sendContent!==content) {
+      f.dataset.sendContent=content;
+      f.dataset.requestKey=crypto.randomUUID();
+    }
+    submit.disabled=true;
+    try {
+      await api("/api/profile",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":f.dataset.requestKey},
+        body:JSON.stringify({source_job:f.dataset.job,source_version:Number(f.dataset.version),content})});
+      if (f.isConnected && $("#dialog").open) {
+        modal("好みを保存しました",'<p>保存した内容は次の依頼から使われます。</p>'+
+          '<a href="#work/memory">Hermesの記憶を開く</a>');
+        $("#dlgbody a").focus();
+      }
+    } catch(error) {
+      if (!showDisabled(error)) f.querySelector(".form-error").textContent=error.message;
+    } finally {submit.disabled=false;}
+    return;
+  }
   if (f.matches(".preferenceForm")) {
     e.preventDefault();
     const submit=e.submitter || f.querySelector("button:not([type=button])");

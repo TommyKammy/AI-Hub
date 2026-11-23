@@ -61,8 +61,17 @@ function jobSources(job) {
 export function canRequestPreference(job) {
   if (job.kind !== "assistant" || job.phase !== "compose" || job.library_selection || job.csv_skill || job.standard_workflow || job.skip_profile) return false;
   const sources = jobSources(job);
-  return sources?.length === 1 && sources[0].version === "依頼時の原文" && !sources[0].pasted &&
-    sources[0].text === job.ask && /次回|次から|今後|これから|いつも|毎回|覚えて|記憶して|好みとして/.test(job.ask);
+  if (sources?.length !== 1 || sources[0].version !== "依頼時の原文" || sources[0].pasted || sources[0].text !== job.ask) return false;
+  const ask=job.ask.trim().replace(/[。！？!?]$/u,"");
+  if (/今回(?:だけ|限り|は)|一度だけ|この(?:依頼|回答)だけ|[\n\r。！？!?]/u.test(ask)) return false;
+  if (/(?:覚えて|記憶して|好みとして保存して)(?:おいて)?(?:ください|ほしい)?$/u.test(ask)) return true;
+  // Keep legacy shorthand for standalone writing preferences. A task about a future event is still a task.
+  const style=ask.match(/^(?:(?:次回|次|次の依頼|次の回答)から|今後は?|これからは?|いつも|毎回)[、, ]*(?:回答は[、, ]*)?(.+)$/u)?.[1]
+    .replace(/(?:ください|ほしい)$/u,"");
+  if (!style) return false;
+  return /^(?:結論を(?:先|最初|冒頭)に|結論から)(?:書いて|述べて|答えて|回答して)$/u.test(style) ||
+    /^(?:箇条書き|敬語|丁寧な文体|常体|ですます調|日本語|英語)(?:で(?:書いて|答えて|回答して|まとめて)|にして)$/u.test(style) ||
+    /^(?:短く|簡潔に)(?:書いて|答えて|回答して|まとめて)$/u.test(style);
 }
 function checkKey(key) {
   if (typeof key !== "string" || !/^[a-zA-Z0-9-]{12,100}$/.test(key))
