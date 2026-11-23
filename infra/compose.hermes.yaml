@@ -1,0 +1,20 @@
+services:
+  hermes:
+    image: nousresearch/hermes-agent@sha256:3e9fe4c6ef36490f43aa0d0d80f9df64e9c92a576eee3042f1a97c8813c05355
+    command: [gateway, run]
+    depends_on: [model, model-b]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8642/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 25
+      start_period: 10s
+    environment:
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      OPENAI_BASE_URL: http://hub:18800/v1
+      OPENAI_API_KEY: synthetic-only
+    volumes:
+      - ./hermes.yaml:/opt/data/config.yaml:ro
+      - ../skills:/opt/ai-hub/skills:ro
+      - ./work_tools.py:/opt/ai-hub/work_tools.py:ro

@@ -1,0 +1,44 @@
+name: cf-hermes-22-lab
+services:
+  model:
+    extends: {file: compose.yaml, service: model}
+  hub:
+    image: ai-hub-hermes-local-hub
+    working_dir: /app
+    command: [node, lab-entry.mjs]
+    environment:
+      LISTEN_ADDR: hub-entry
+      DATA_DIR: /data
+      ADMIN_ACCOUNTS_DIR: /app/.runtime/admin-accounts
+      SATO_GATEWAY_HOST: hub-sato
+      TANAKA_GATEWAY_HOST: hub-tanaka
+      SATO_URL: http://127.0.0.1:19444
+      TANAKA_URL: http://127.0.0.1:19444
+      SATO_RECEIPTS_URL: http://host.lima.internal:19474
+      TANAKA_RECEIPTS_URL: http://host.lima.internal:19474
+      SATO_KEY: ${SATO_KEY}
+      TANAKA_KEY: ${TANAKA_KEY}
+      SATO_PORT: 19431
+      TANAKA_PORT: 19432
+      ADMIN_PORT: 19433
+    volumes: ["./:/app:ro","data:/data"]
+    ports: ["127.0.0.1:19441:19441","127.0.0.1:19442:19442","127.0.0.1:19431:19431","127.0.0.1:19432:19432","127.0.0.1:19433:19433"]
+    networks:
+      entry: {aliases: [hub-entry], gw_priority: 1}
+      sato: {aliases: [hub-sato]}
+      tanaka: {aliases: [hub-tanaka]}
+      providers: {}
+networks:
+  sato:
+    ipam: {config: [{subnet: 10.241.198.0/28}]}
+    internal: true
+  tanaka:
+    ipam: {config: [{subnet: 10.241.198.16/28}]}
+    internal: true
+  providers:
+    ipam: {config: [{subnet: 10.241.198.32/28}]}
+    internal: true
+  entry:
+    ipam: {config: [{subnet: 10.241.198.48/28}]}
+volumes:
+  data: {}

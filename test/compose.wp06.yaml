@@ -1,0 +1,26 @@
+services:
+  model:
+    environment:
+      FIXTURE_WP06: "1"
+  hub:
+    environment:
+      SATO_PORT: 19931
+      TANAKA_PORT: 19932
+      ADMIN_PORT: 19933
+    ports: !override
+      - "127.0.0.1:19931:19931"
+      - "127.0.0.1:19932:19932"
+      - "127.0.0.1:19933:19933"
+networks:
+  entry:
+    ipam:
+      config: [{subnet: 10.241.196.0/28}]
+  providers:
+    ipam:
+      config: [{subnet: 10.241.196.16/28}]
+  sato-net:
+    ipam:
+      config: [{subnet: 10.241.196.32/28}]
+  tanaka-net:
+    ipam:
+      config: [{subnet: 10.241.196.48/28}]

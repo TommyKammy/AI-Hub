@@ -1,0 +1,14 @@
+services:
+  hub:
+    image: ai-hub-hermes-local-hub
+    build: !reset null
+    environment:
+      SATO_PORT: 19631
+      TANAKA_PORT: 19632
+      ADMIN_PORT: 19633
+    ports: !override ["127.0.0.1:19631:19631", "127.0.0.1:19632:19632", "127.0.0.1:19633:19633"]
+networks:
+  entry: {ipam: {config: [{subnet: 10.241.199.0/28}]}}
+  providers: {ipam: {config: [{subnet: 10.241.199.16/28}]}}
+  sato-net: {ipam: {config: [{subnet: 10.241.199.32/28}]}}
+  tanaka-net: {ipam: {config: [{subnet: 10.241.199.48/28}]}}

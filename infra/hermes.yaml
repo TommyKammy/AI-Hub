@@ -1,0 +1,23 @@
+model:
+  provider: custom
+  default: hub-managed
+  base_url: http://hub:18800/v1
+  api_key: synthetic-only
+platform_toolsets:
+  api_server: [work, memory]
+tools:
+  tool_search:
+    enabled: 'off'
+mcp_servers:
+  work:
+    command: /opt/hermes/.venv/bin/python
+    args: [/opt/ai-hub/work_tools.py]
+skills:
+  project_discovery: false
+  external_dirs:
+    - /opt/ai-hub/skills
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+agent:
+  max_turns: 5

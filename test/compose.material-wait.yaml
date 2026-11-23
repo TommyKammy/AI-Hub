@@ -1,0 +1,21 @@
+# Dedicated browser-test instance with independent Hub and Hermes volumes.
+services:
+  hub:
+    environment:
+      LOCAL_MLX_ENABLED: "1"
+      SATO_PORT: 18971
+      TANAKA_PORT: 18972
+      ADMIN_PORT: 18973
+    ports: !override
+      - "127.0.0.1:18971:18971"
+      - "127.0.0.1:18972:18972"
+      - "127.0.0.1:18973:18973"
+networks:
+  entry:
+    ipam: {config: [{subnet: 172.29.124.0/24}]}
+  providers:
+    ipam: {config: [{subnet: 172.29.125.0/24}]}
+  sato-net:
+    ipam: {config: [{subnet: 172.29.126.0/24}]}
+  tanaka-net:
+    ipam: {config: [{subnet: 172.29.127.0/24}]}

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ホーム · AI Hub</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/job-chat.css" />
+    <link rel="stylesheet" href="/account-session.css" />
+  </head>
+  <body class="employee-workspace">
+    <a class="skip" href="#main">本文へ</a>
+    <aside>
+      <div class="brand">
+        <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>AI Hub
+      </div>
+      <button id="workspaceMenu" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="workspaceNav adminMenu" data-icon="menu"></button>
+      <nav id="workspaceNav" aria-label="ワークスペース">
+        <a class="navbtn" href="#home" data-op="home" aria-current="page"><span data-icon="house"></span>ホーム</a>
+        <a class="navbtn" href="#jobs" data-op="jobs"><span data-icon="folder"></span>依頼一覧</a>
+        <a class="navbtn" href="#catalog" data-op="catalog"><span data-icon="book"></span>手順を探す</a>
+        <a class="navbtn" href="#work" data-op="work"><span data-icon="book"></span>業務スペース</a>
+      </nav>
+      <nav id="adminMenu" hidden aria-label="管理者メニュー">
+        <div class="navcap">管理者メニュー</div>
+        <a class="navbtn" href="/admin.html"><span data-icon="home"></span>管理者画面</a>
+        <a class="navbtn" data-manager-shortcut hidden href="/admin.html#models-heading"><span data-icon="layers"></span>モデル設定</a>
+        <a class="navbtn" href="/admin.html#groups"><span data-icon="people"></span>グループと権限</a>
+        <a class="navbtn" data-manager-shortcut hidden href="/admin.html#memberships"><span data-icon="people"></span>ユーザアカウント</a>
+      </nav>
+      <button id="accountTrigger" class="account" type="button" aria-labelledby="accountLabel employee" aria-controls="accountMenu" aria-haspopup="menu" aria-expanded="false" commandfor="accountMenu" command="toggle-popover">
+        <span id="accountLabel" class="session-sr-only">アカウントメニュー</span>
+        <span class="avatar" aria-hidden="true"></span>
+        <span class="account-name">
+          <b><span id="employee"></span></b><small data-team></small>
+        </span>
+        <span class="account-chevron" aria-hidden="true"></span>
+      </button>
+      <div id="accountMenu" class="account-menu" popover hidden>
+        <div role="menu" aria-labelledby="accountTrigger">
+          <button type="button" role="menuitem" tabindex="-1" data-op="profile" data-account-action>Hermesが覚えていること</button>
+          <button type="button" role="menuitem" tabindex="-1" data-logout data-account-action hidden>ログアウト</button>
+        </div>
+        <p class="account-error" role="alert"></p>
+      </div>
+    </aside>
+    <div class="shell">
+      <header class="top">
+        <nav class="crumb" aria-label="パンくず">
+          <span data-icon="home"></span>
+          <a id="crumbRoot" href="#home">ワークスペース</a><i aria-hidden="true">/</i><strong id="crumb" aria-current="page"></strong>
+        </nav>
+        <button type="button" class="secondary" id="notifications" data-op="notifications" hidden>通知</button>
+        <span class="mode"><i class="dot"></i>ローカル検証・合成資料</span>
+      </header>
+      <main id="main" tabindex="-1" aria-labelledby="crumb"></main>
+    </div>
+    <dialog id="dialog" aria-labelledby="dlgtitle">
+      <div class="dialoghead">
+        <h2 id="dlgtitle"></h2>
+        <form method="dialog">
+          <button
+            class="x"
+            aria-label="閉じる"
+            autofocus
+            data-icon="x"
+          ></button>
+        </form>
+      </div>
+      <div class="dialogbody" id="dlgbody"></div>
+    </dialog>
+    <div class="toast" role="status"></div>
+    <div id="sessionStatus" role="status" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

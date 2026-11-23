@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/admin-dashboard.css" />
+    <link rel="stylesheet" href="/account-session.css" />
+    <title>管理画面｜AI Hub</title>
+  </head>
+  <body class="admin">
+    <a class="skip" href="#main">本文へ</a>
+    <aside id="adminSidebar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span>AI Hub
+      </div>
+      <button id="adminMenuToggle" type="button" aria-expanded="false" aria-controls="adminWorkspaceNav adminShortcuts">メニュー</button>
+      <nav id="adminWorkspaceNav" aria-label="ワークスペース">
+        <a class="navbtn" href="/#home"><span data-icon="house"></span>ホーム</a>
+        <a class="navbtn" href="/#jobs"><span data-icon="folder"></span>依頼一覧</a>
+        <a class="navbtn" href="/#catalog"><span data-icon="book"></span>手順を探す</a>
+        <a class="navbtn" href="/#work"><span data-icon="book"></span>業務スペース</a>
+      </nav>
+      <nav id="adminShortcuts" aria-label="管理者メニュー" hidden>
+        <div class="navcap">管理者メニュー</div>
+        <a class="navbtn" href="#dashboard"><span data-icon="home"></span>管理者画面</a>
+        <a class="navbtn" data-manager hidden href="#models-heading"><span data-icon="layers"></span>モデル設定</a>
+        <a class="navbtn" href="#groups"><span data-icon="people"></span>グループと権限</a>
+        <a class="navbtn" data-manager hidden href="#memberships"><span data-icon="people"></span>ユーザアカウント</a>
+      </nav>
+      <button id="accountTrigger" class="account" type="button" aria-labelledby="accountLabel sidebarAccount" aria-controls="accountMenu" aria-haspopup="menu" aria-expanded="false" commandfor="accountMenu" command="toggle-popover">
+        <span id="accountLabel" class="session-sr-only">アカウントメニュー</span>
+        <span id="adminInitials" class="avatar" aria-hidden="true"></span>
+        <span class="account-name"><b id="sidebarAccount"></b><small id="sidebarRole"></small></span>
+        <span class="account-chevron" aria-hidden="true"></span>
+      </button>
+      <div id="accountMenu" class="account-menu" popover hidden>
+        <div role="menu" aria-labelledby="accountTrigger">
+          <a href="/#work/memory" role="menuitem" tabindex="-1" data-account-action>Hermesが覚えていること</a>
+          <button type="button" role="menuitem" tabindex="-1" data-logout data-account-action hidden>ログアウト</button>
+        </div>
+        <p class="account-error" role="alert"></p>
+      </div>
+    </aside>
+    <div class="shell">
+      <header class="top">
+        <nav id="adminBreadcrumb" aria-label="パンくず">
+          <ol>
+            <li><a href="#dashboard">管理者画面</a></li>
+            <li><span aria-hidden="true">/</span><strong id="adminCrumb" aria-current="page">ダッシュボード</strong></li>
+          </ol>
+        </nav>
+        <span class="mode">ローカル検証・合成資料</span>
+      </header>
+      <main id="main" tabindex="-1">
+        <div class="admin-page-header">
+          <p><span id="adminAccount"></span> <span id="adminRole"></span></p>
+          <a class="secondary" href="/">AI Hub に戻る</a>
+        </div>
+        <nav id="adminAreas" class="admin-areas" aria-label="管理項目" hidden>
+          <a id="dashboardTitle" href="#dashboard" aria-current="page">ダッシュボード</a>
+          <a id="analyticsTitle" href="#usage-overview">アナリティクス</a>
+          <a data-manager hidden id="modelsTitle" href="#models-heading">モデル設定</a>
+          <a id="groupsTitle" href="#groups">グループと権限</a>
+          <a data-manager hidden id="proceduresTitle" href="#procedures">手順の公開</a>
+          <a data-manager hidden id="membershipsTitle" href="#memberships">ユーザアカウント</a>
+          <a data-manager hidden id="recoveriesTitle" href="#recoveries">Hermes 実行照合</a>
+          <a id="auditTitle" href="#employee-history">監査ログ</a>
+          <a id="usageTitle" href="#usage">モデル利用記録</a>
+          <a data-manager hidden id="procedureQualityTitle" href="#procedure-quality">手順の品質</a>
+          <a data-manager hidden id="librariesTitle" href="#library-connections">資料接続</a>
+          <a data-manager hidden id="usagePolicyTitle" href="#usage-policy">利用ポリシー</a>
+          <a data-manager hidden id="projectsTitle" href="#project-admin">案件管理</a>
+        </nav>
+        <section id="dashboard" class="admin-area" data-area hidden tabindex="-1" aria-labelledby="dashboardTitle">
+          
+          <div id="dashboardRows"><p>ダッシュボードを読み込んでいます。</p></div>
+        </section>
+        <section id="models-heading" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="modelsTitle">
+          <div class="heading">
+            
+            <button type="button" class="primary" id="register" disabled>モデルを登録</button>
+          </div>
+          <section class="admin-standard">
+            <h2>全社員の標準モデル</h2>
+            <p id="standard">読み込み中</p>
+            <p id="standardDetail" class="meta"></p>
+          </section>
+          <section id="modelProfiles" class="admin-connections" aria-labelledby="modelProfileHeading">
+            <h2 id="modelProfileHeading">接続方式から登録</h2>
+            <p class="meta">外部モデルの接続設定を下書きとして保存します。実行に使うモデルは下のモデル台帳で管理します。</p>
+            <ul id="modelProfileRoutes"></ul>
+            <div id="modelProfileRows" class="stack"></div>
+            <p id="modelProfileNotice" role="status"></p>
+          </section>
+          <section class="admin-connections">
+            <h2>接続先を選んで登録</h2>
+            <ul id="modelConnections"></ul>
+          </section>
+          <div class="sectionhead"><h2>モデル台帳</h2></div>
+          <button type="button" class="secondary" id="rollback" hidden>
+            直前の標準設定に戻す
+          </button>
+          <div id="models" class="stack"></div>
+        </section>
+          <section id="usage-policy" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="usagePolicyTitle">
+            <div id="policyRows" class="stack"></div>
+          </section>
+          <section id="procedures" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="proceduresTitle">
+            <section class="standard-procedures" aria-labelledby="standardProceduresHeading">
+              <div class="sectionhead">
+                <h2 id="standardProceduresHeading">会社標準の手順</h2>
+                <button type="button" id="refreshStandardProcedures" class="secondary">公開版を更新</button>
+              </div>
+              <p id="standardProcedureStatus" role="status"></p>
+              <ul id="standardProcedureRows" aria-labelledby="standardProceduresHeading"></ul>
+            </section>
+            <section aria-labelledby="teamProceduresHeading">
+              <div class="sectionhead">
+                <h2 id="teamProceduresHeading">チーム共有の手順</h2>
+                <button type="button" id="refreshProcedures" class="secondary">申請を更新</button>
+              </div>
+              <div id="procedureRows" class="stack"></div>
+            </section>
+          </section>
+          <section id="procedure-quality" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="procedureQualityTitle">
+            <div id="qualityRows" class="stack"></div>
+          </section>
+          <section id="library-connections" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="librariesTitle">
+            <div class="sectionhead"><button type="button" id="refreshLibraries" class="secondary">接続状態を更新</button></div>
+            <div id="libraryRows" class="stack"></div>
+            <p id="libraryStatus" role="status"></p>
+          </section>
+          <section id="project-admin" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="projectsTitle">
+            <div class="sectionhead"><button type="button" id="refreshProjects" class="secondary">案件を更新</button></div>
+            <div id="projectRows" class="stack"></div>
+          </section>
+          <section id="memberships" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="membershipsTitle">
+            <div id="memberList">
+              <form id="memberFilters" class="log-filters" action="/api/admin/account-list" method="get">
+                <div class="formlabel"><label for="memberQuery">氏名・メールアドレス・社員ID・担当</label><input id="memberQuery" name="q" type="search" maxlength="100" autocomplete="off" spellcheck="false"></div>
+                <div class="formlabel"><label for="memberTeam">所属部門</label><select id="memberTeam" name="team"><option value="">すべての部門</option></select></div>
+                <div class="formlabel"><label for="memberRole">権限</label><select id="memberRole" name="role"><option value="">すべての権限</option><option value="employee">一般社員</option><option value="manager">管理者</option><option value="auditor">閲覧専用管理者</option></select></div>
+                <div class="formlabel"><label for="memberState">利用状態</label><select id="memberState" name="state">
+                  <option value="">すべての状態</option><option value="active">利用可能</option><option value="stopped">利用停止中</option>
+                </select></div>
+                <div class="audit-buttons">
+                  <button type="submit" class="secondary">社員を絞り込む</button>
+                  <button type="button" id="clearMemberFilters" class="secondary">絞り込みを解除</button>
+                  <button type="button" id="downloadMembers" class="secondary" hidden>ユーザアカウントをCSV出力</button>
+                </div>
+              </form>
+              <p id="memberStatus" role="status"></p>
+              <div id="memberRows" class="stack"></div>
+            </div>
+            <article id="memberDetail" class="panel pad" hidden>
+              <button type="button" id="closeMemberDetail" class="secondary">一覧に戻る</button>
+              <div id="memberDetailContent"></div>
+            </article>
+          </section>
+          <section id="recoveries" class="admin-area" data-area data-manager hidden tabindex="-1" aria-labelledby="recoveriesTitle">
+            <div class="sectionhead"><button type="button" id="refreshRecoveries" class="secondary">照合待ちを更新</button></div>
+            <div id="recoveryRows" class="stack"></div>
+            <p id="recoveryResult" role="status"></p>
+          </section>
+        <section id="groups" class="admin-area" data-area hidden tabindex="-1" aria-labelledby="groupsTitle">
+          <div id="adminGroupSummary" class="stack"></div>
+          <section id="local-directory" hidden aria-labelledby="directoryTitle">
+            <div class="sectionhead"><h2 id="directoryTitle">Entra ID 同期</h2></div>
+            <div id="directoryRows" class="stack"></div>
+          </section>
+        </section>
+        <section id="employee-history" class="admin-area" data-area hidden tabindex="-1" aria-labelledby="auditTitle">
+          <div class="sectionhead"><button type="button" id="refreshEmployeeHistory" class="secondary">履歴を更新</button></div>
+          <details id="closureAudit" class="panel pad">
+            <summary>対応終了した会議メモを検索</summary>
+            <form id="closureSearch" class="log-filters">
+              <div class="formlabel"><label for="closureJob">依頼ID</label><input id="closureJob" name="job" type="search" required autocomplete="off" spellcheck="false"></div>
+              <button type="submit" class="secondary">終了記録を検索</button>
+            </form>
+            <p id="closureSearchStatus" role="status"></p>
+            <div id="closureDetails"></div>
+          </details>
+          <details id="exportHistory" class="panel pad">
+            <summary>CSV出力履歴</summary>
+            <form id="exportFilters" class="log-filters">
+              <div class="formlabel"><label for="exporterFilter">出力者</label><select id="exporterFilter" name="exported_by"><option value="">すべての出力者</option></select></div>
+              <div class="formlabel"><label for="exportEmployeeFilter">出力対象の社員</label><select id="exportEmployeeFilter" name="employee"><option value="">すべての対象</option></select></div>
+              <div class="formlabel"><label for="exportSourceFilter">出力種別</label><select id="exportSourceFilter" name="source">
+                <option value="">すべての種別</option><option value="audit">監査ログのCSV出力</option><option value="history">出力履歴のCSV保存</option>
+              </select></div>
+              <div class="formlabel"><label for="exportFrom">出力日時の開始（日本時間）</label><input type="datetime-local" id="exportFrom" name="from" step="1"></div>
+              <div class="formlabel"><label for="exportTo">出力日時の終了（日本時間）</label><input type="datetime-local" id="exportTo" name="to" step="1"></div>
+              <div class="audit-buttons">
+                <button type="submit" id="refreshExports" class="secondary">出力履歴を更新</button>
+                <a class="secondary" id="downloadExports" download hidden>出力履歴をCSV保存</a>
+                <button type="button" id="clearExportFilters" class="secondary">出力履歴の絞り込みを解除</button>
+              </div>
+            </form>
+            <div id="exportRows"></div>
+            <button type="button" id="olderExports" class="secondary" hidden>過去の出力を表示</button>
+          </details>
+          <form id="auditFilters" class="log-filters">
+            <div class="formlabel"><label for="employeeFilter">対象社員</label><select id="employeeFilter" name="employee"><option value="">すべての対象</option></select></div>
+            <div class="formlabel"><label for="operatorFilter">操作者</label><select id="operatorFilter" name="operator"><option value="">すべての操作者</option></select></div>
+            <div class="formlabel"><label for="outcomeFilter">操作結果</label><select id="outcomeFilter" name="outcome">
+              <option value="">すべての結果</option><option value="denied">拒否</option><option value="applied">変更済み</option>
+              <option value="closed_unconfirmed">結果未確認で対応終了</option>
+            </select></div>
+            <div class="formlabel"><label for="auditJob">依頼ID</label><input id="auditJob" name="job" type="search" maxlength="64" autocomplete="off" spellcheck="false"></div>
+            <div class="formlabel"><label for="auditReason">理由に含まれる語句</label><input id="auditReason" name="reason" type="search" maxlength="240" autocomplete="off"></div>
+            <div class="formlabel"><label for="auditFrom">開始日時（日本時間）</label><input type="datetime-local" id="auditFrom" name="from" step="1"></div>
+            <div class="formlabel"><label for="auditTo">終了日時（日本時間）</label><input type="datetime-local" id="auditTo" name="to" step="1"></div>
+            <div class="audit-buttons">
+              <button class="secondary" type="submit">監査ログを検索</button>
+              <button class="secondary" type="button" id="clearAuditFilters">条件をクリア</button>
+              <a class="secondary" id="exportAudit" download hidden>CSV出力</a>
+            </div>
+          </form>
+          <div class="panel pad">
+            <div id="employeeChanges"></div>
+            <button type="button" id="olderEmployeeChanges" class="secondary" hidden>過去の記録を表示</button>
+          </div>
+        </section>
+        <section id="usage-overview" class="admin-area" data-area hidden tabindex="-1" aria-labelledby="analyticsTitle">
+          <div class="sectionhead"><button type="button" id="refreshUsageOverview" class="secondary">集計を更新</button></div>
+          <div id="usageOverviewRows"></div>
+        </section>
+        <section id="usage" class="admin-area" data-area hidden tabindex="-1" aria-labelledby="usageTitle">
+          <div class="sectionhead">
+            
+            <button type="button" id="refreshLogs" class="secondary">
+              記録を更新
+            </button>
+          </div>
+          <form id="findUsage" class="actions">
+            <label class="formlabel"
+              >依頼ID<input
+                name="job"
+                maxlength="64"
+                placeholder="すべての依頼" /></label
+            ><button class="secondary">絞り込む</button>
+          </form>
+          <div class="panel pad">
+            <div id="usageRows"></div>
+            <button type="button" id="olderUsage" class="secondary" hidden>
+              過去の利用を表示
+            </button>
+          </div>
+          <details id="changes" class="panel pad">
+            <summary>モデル設定の変更履歴</summary>
+            <div id="changeRows"></div>
+            <button type="button" id="olderChanges" class="secondary" hidden>
+              過去の変更を表示
+            </button>
+          </details>
+        </section>
+        <p id="notice" role="status"></p>
+      </main>
+    </div>
+    <dialog id="dialog" aria-labelledby="dlgtitle">
+      <div class="dialoghead">
+        <h2 id="dlgtitle"></h2>
+        <form method="dialog">
+          <button type="submit" aria-label="閉じる" class="x" autofocus>
+            ×
+          </button>
+        </form>
+      </div>
+      <div id="dialogContent" class="dialogbody"></div>
+      <p id="dialogError" role="alert"></p>
+    </dialog>
+    <div id="sessionStatus" role="status" hidden></div>
+    <script src="/admin-groups.js"></script>
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

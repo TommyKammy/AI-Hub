@@ -1,0 +1,8 @@
+services:
+  reader:
+    image: python@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
+    command: [python, -B, /reader.py]
+    user: "10000:10000"
+    read_only: true
+    cap_drop: [ALL]
+    volumes: ["./receipt-reader.py:/reader.py:ro"]

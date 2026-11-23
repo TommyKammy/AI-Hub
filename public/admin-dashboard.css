@@ -1,0 +1,287 @@
+.admin .ua {
+  --chart-success: #4a6b56;
+  --chart-failure: #a54d39;
+  --chart-uncertain: #84909b;
+  min-width: 0;
+  color: var(--ink);
+}
+.ua :is(h2, h3) {
+  font-size: 1rem;
+}
+.ua a {
+  color: inherit;
+  text-underline-offset: .18em;
+}
+.ua small, .ua-note, .ua-kpis dt, .ua-month span {
+  color: var(--muted);
+}
+.ua-note {
+  margin-block: .6rem 1.2rem;
+  font-size: .87rem;
+}
+.ua a.secondary {
+  width: fit-content;
+  text-decoration: none;
+}
+.ua-month {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: clamp(1.4rem, 4vw, 4rem);
+  row-gap: .75rem;
+  padding-bottom: 1.15rem;
+  border-bottom: 1px solid var(--line);
+}
+.ua-month span, .ua-month small {
+  font-size: .84rem;
+}
+.ua-month strong {
+  display: block;
+  margin-block: .12rem;
+  font-size: 2.2rem;
+  line-height: 1.25;
+  letter-spacing: -.035em;
+}
+.ua-month-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .4rem .8rem;
+  margin-inline-start: auto;
+  font-size: .87rem;
+}
+.ua-month-note {
+  flex-basis: 100%;
+}
+.ua-tools, .ua-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-block: 1rem .75rem;
+}
+.ua-tools label, .ua-filters label {
+  color: var(--muted);
+  font-size: .86rem;
+}
+.ua-period {
+  font-weight: 600;
+}
+.ua-period small {
+  font-weight: 400;
+}
+.ua select, .ua input {
+  max-width: 100%;
+  min-width: 0;
+  padding: .4rem .55rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: white;
+  font: inherit;
+}
+.ua-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .85rem;
+  margin: 1rem 0;
+  padding-block: .95rem;
+  border-block: 1px solid var(--line);
+}
+.ua-kpis dt {
+  font-size: .85rem;
+}
+.ua-kpis dd {
+  margin: .2rem 0 0;
+  font-size: 1.6rem;
+  font-weight: 620;
+  letter-spacing: -.03em;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.ua-kpis dd small {
+  margin-inline-start: .27rem;
+  font-size: .8rem;
+  font-weight: 400;
+}
+.ua-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 1.25rem clamp(1.25rem, 4vw, 4rem);
+  margin-block: 1.5rem;
+}
+.ua-plot {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: .4rem;
+  margin-top: 1rem;
+}
+.ua-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: .72rem;
+  text-align: end;
+}
+.ua-chart {
+  display: flex;
+  height: 136px;
+  border-block: 1px solid var(--line);
+  background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat;
+}
+.ua-chart a {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: center;
+}
+.ua-chart a:hover, .ua-chart a:focus-visible {
+  background-color: rgb(74 107 86 / .1);
+}
+.ua-chart a > span {
+  display: flex;
+  flex-direction: column;
+  width: min(65%, 2.7rem);
+  height: var(--bar, 0%);
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+  background: var(--chart-success);
+}
+.ua-chart i:first-child { height: var(--failure, 0%); background: var(--chart-failure); }
+.ua-chart i:last-child { height: var(--uncertain, 0%); background: var(--chart-uncertain); }
+.ua-axis, .ua-key {
+  display: flex;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: .77rem;
+}
+.ua-axis {
+  justify-content: space-between;
+  margin: .25rem 0 .6rem 2rem;
+}
+.ua-key { gap: .25rem .8rem; }
+.ua-key span::before {
+  display: inline-block;
+  width: .65rem;
+  height: .65rem;
+  margin-inline-end: .25rem;
+  border-radius: 2px;
+  background: var(--chart-success);
+  content: "";
+}
+.ua-key span:nth-child(2)::before { background: var(--chart-failure); }
+.ua-key span:nth-child(3)::before { background: var(--chart-uncertain); }
+.ua-rank {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .3rem .6rem;
+  padding-block: .52rem;
+  color: var(--ink);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.ua-rank:first-of-type { margin-top: .4rem; }
+.ua-rank:hover span { text-decoration: underline; }
+.ua-rank i {
+  grid-column: 1 / -1;
+  width: var(--rank, 0%);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--chart-success);
+}
+.ua-foot {
+  padding-top: .85rem;
+  border-top: 1px solid var(--line);
+}
+.ua-foot:empty { display: none; }
+.ua-modes {
+  display: flex;
+  gap: .3rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.ua-modes a {
+  padding: .45rem .85rem;
+  border-bottom: 2px solid transparent;
+  color: var(--ink);
+  text-decoration: none;
+}
+.ua-modes a[aria-current="page"] {
+  border-color: currentColor;
+  font-weight: 650;
+}
+.ua-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .6rem .8rem;
+}
+.ua-filters label {
+  display: grid;
+  gap: .25rem;
+}
+.ua-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  font-size: .9rem;
+}
+.ua-scroll {
+  max-width: 100%;
+  max-height: min(33rem, 80vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+}
+.ua-scroll:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.ua-scroll table {
+  width: 100%;
+  background: white;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .86rem;
+}
+.ua-scroll :is(th, td) {
+  padding: .65rem .75rem;
+  border-bottom: 1px solid var(--line);
+  background: white;
+  text-align: start;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.ua-scroll tr:last-child td, .ua-scroll tbody tr:last-child th { border-bottom: 0; }
+.ua-scroll thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+}
+.ua-scroll thead th { background: var(--bg); }
+.ua-scroll tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  font-weight: 500;
+}
+.ua-scroll details {
+  max-width: 16rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.ua-scroll summary { cursor: pointer; }
+.ua-call-facts { margin: .45rem 0 0; }
+.ua-call-facts dt { color: var(--muted); }
+.ua-call-facts dd { margin: 0 0 .25rem; }
+.ua-scroll + h2 { margin-top: 1rem; }
+@media (max-width: 760px) {
+  .ua-month-actions { margin-inline-start: 0; }
+  .ua-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ua-split { grid-template-columns: minmax(0, 1fr); }
+  .ua-scroll tbody th { position: static; }
+}

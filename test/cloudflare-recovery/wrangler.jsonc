@@ -1,0 +1,36 @@
+{
+  "name": "cf-hermes-22-local-lab",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "containers": [
+    {
+      "class_name": "Employee",
+      "image": "./image/Dockerfile",
+      "max_instances": 2,
+      "image_build_context": "./image"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "EMP",
+        "class_name": "Employee"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Employee"
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "probe-db",
+      "database_id": "00000000-0000-4000-8000-000000000001"
+    }
+  ]
+}

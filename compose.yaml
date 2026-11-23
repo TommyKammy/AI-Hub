@@ -1,0 +1,110 @@
+name: ai-hub-hermes-local
+services:
+  sato-receipts:
+    extends: {file: infra/compose.receipts.yaml, service: reader}
+    environment:
+      API_SERVER_KEY: ${SATO_KEY:?run node infra/init.mjs first}
+    volumes: ["sato-data:/store:ro"]
+    networks: [sato-net]
+  tanaka-receipts:
+    extends: {file: infra/compose.receipts.yaml, service: reader}
+    environment:
+      API_SERVER_KEY: ${TANAKA_KEY:?run node infra/init.mjs first}
+    volumes: ["tanaka-data:/store:ro"]
+    networks: [tanaka-net]
+  sato:
+    extends: {file: infra/compose.hermes.yaml, service: hermes}
+    environment:
+      API_SERVER_KEY: ${SATO_KEY:?run node infra/init.mjs first}
+    volumes:
+      - sato-data:/opt/data
+    networks: [sato-net]
+  tanaka:
+    extends: {file: infra/compose.hermes.yaml, service: hermes}
+    environment:
+      API_SERVER_KEY: ${TANAKA_KEY:?run node infra/init.mjs first}
+    volumes:
+      - tanaka-data:/opt/data
+    networks: [tanaka-net]
+  model: &fixture
+    image: python@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
+    user: "65534:65534"
+    read_only: true
+    command: [python, -B, /fixture/model.py]
+    volumes: ["./infra/model.py:/fixture/model.py:ro"]
+    networks: [providers]
+  model-b:
+    <<: *fixture
+    environment:
+      FIXTURE_MODEL_ID: fixture-model-b
+  hub:
+    build: {context: ./infra, dockerfile: hub.Dockerfile}
+    working_dir: /app
+    command: [node, server.mjs]
+    depends_on:
+      sato: {condition: service_healthy}
+      tanaka: {condition: service_healthy}
+    environment:
+      LISTEN_ADDR: hub-entry
+      LOCAL_MLX_ENABLED: ${LOCAL_MLX_ENABLED:-0}
+      DATA_DIR: /data
+      ADMIN_ACCOUNTS_DIR: /run/secrets/admin-accounts
+      SATO_GATEWAY_HOST: hub-sato
+      TANAKA_GATEWAY_HOST: hub-tanaka
+      SATO_URL: http://sato:8642
+      TANAKA_URL: http://tanaka:8642
+      SATO_RECEIPTS_URL: http://sato-receipts:8643
+      TANAKA_RECEIPTS_URL: http://tanaka-receipts:8643
+      SATO_KEY: ${SATO_KEY:?run node infra/init.mjs first}
+      TANAKA_KEY: ${TANAKA_KEY:?run node infra/init.mjs first}
+      AI_HUB_RUNTIME_ALIASES: ${AI_HUB_RUNTIME_ALIASES-}
+      AI_HUB_LOCAL_DIRECTORY_FILE: ${AI_HUB_LOCAL_DIRECTORY_FILE-}
+    volumes:
+      - ./personal-work.mjs:/app/personal-work.mjs:ro
+      - ./reservation-plan.mjs:/app/reservation-plan.mjs:ro
+      - ./work-split.mjs:/app/work-split.mjs:ro
+      - ./inquiries.mjs:/app/inquiries.mjs:ro
+      - ${AI_HUB_INQUIRY_DESKS:-./inquiry-desks.json}:/app/inquiry-desks.json:ro
+      - ./csv-skill.mjs:/app/csv-skill.mjs:ro
+      - ./libraries.mjs:/app/libraries.mjs:ro
+      - ./document-text.mjs:/app/document-text.mjs:ro
+      - ${AI_HUB_LIBRARY_DIR:-./library-data}:/app/library-data:ro
+      - ./server.mjs:/app/server.mjs:ro
+      - ./operations.mjs:/app/operations.mjs:ro
+      - ./usage-report.mjs:/app/usage-report.mjs:ro
+      - ./usage-policy.mjs:/app/usage-policy.mjs:ro
+      - ./catalog.mjs:/app/catalog.mjs:ro
+      - ./model-profiles.mjs:/app/model-profiles.mjs:ro
+      - ./runtime-assignments.mjs:/app/runtime-assignments.mjs:ro
+      - ./gateway.mjs:/app/gateway.mjs:ro
+      - ./.runtime/admin-accounts:/run/secrets/admin-accounts:ro
+      - ./admin-auth.mjs:/app/admin-auth.mjs:ro
+      - ./standard-procedures.mjs:/app/standard-procedures.mjs:ro
+      - ./applied-procedure.mjs:/app/applied-procedure.mjs:ro
+      - ./hub.mjs:/app/hub.mjs:ro
+      - ./arrival-waits.mjs:/app/arrival-waits.mjs:ro
+      - ./procedures.mjs:/app/procedures.mjs:ro
+      - ./memberships.mjs:/app/memberships.mjs:ro
+      - ./enterprise-directory.mjs:/app/enterprise-directory.mjs:ro
+      - ./employee-profile.mjs:/app/employee-profile.mjs:ro
+      - ./fixtures.mjs:/app/fixtures.mjs:ro
+      - ./public:/app/public:ro
+      - ./skills:/app/skills:ro
+      - hub-data:/data
+    networks:
+      entry:
+        aliases: [hub-entry]
+        gw_priority: 1
+      sato-net: {aliases: [hub-sato]}
+      tanaka-net: {aliases: [hub-tanaka]}
+      providers: {}
+    ports: ["127.0.0.1:18731:18731", "127.0.0.1:18732:18732", "127.0.0.1:18733:18733"]
+networks:
+  entry: {}
+  providers: {internal: true}
+  sato-net: {internal: true}
+  tanaka-net: {internal: true}
+volumes:
+  sato-data: {}
+  tanaka-data: {}
+  hub-data: {}

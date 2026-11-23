@@ -1,0 +1,158 @@
+.session-sr-only {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+body[data-checking-session] > :not(#sessionStatus, script) { visibility: hidden; }
+
+#sessionStatus {
+  position: fixed;
+  inset: 3rem 0 auto;
+  max-inline-size: 28rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+#sessionStatus button { margin-block-start: 1rem; }
+
+#accountTrigger {
+  anchor-name: --sidebar-account;
+  text-align: start;
+  flex-shrink: 0;
+  min-block-size: 44px;
+}
+
+#accountTrigger .avatar { flex: none; }
+.account-name { min-inline-size: 0; }
+.account-name :is(b, small) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-chevron {
+  flex: none;
+  inline-size: 7px;
+  block-size: 7px;
+  margin-inline-start: auto;
+  margin-inline-end: 2px;
+  border-block-end: 1.5px solid currentColor;
+  border-inline-end: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+#accountTrigger[aria-expanded="true"] .account-chevron { transform: rotate(225deg); }
+
+.account-menu {
+  position: fixed;
+  inset: auto;
+  z-index: 15;
+  inline-size: max-content;
+  max-inline-size: calc(100vw - 16px);
+  max-block-size: calc(100vh - 16px);
+  overflow: auto;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: var(--ink);
+}
+
+@supports (position-area: block-start) {
+  .account-menu[popover] {
+    position-anchor: --sidebar-account;
+    position-area: block-start span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+    margin-block: 5px;
+  }
+}
+
+.account-menu [data-account-action]:not([hidden]) {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: 44px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: .9rem;
+  color: inherit;
+  text-align: start;
+  text-decoration: none;
+}
+
+.account-menu [data-account-action]:is(:hover, :focus-visible) { background: var(--pale); }
+.account-menu [data-account-action]:focus-visible { outline-offset: -3px; }
+.account-error { color: #9b2636; }
+.account-menu .account-error:not(:empty) { max-inline-size: 16rem; padding: 6px 12px; }
+
+@media (max-width: 680px) {
+  .employee-workspace > aside { position: relative; }
+  .employee-workspace #accountTrigger,
+  .admin #adminSidebar > #accountTrigger {
+    display: flex;
+    position: absolute;
+    inset: 5px 72px auto auto;
+    min-inline-size: 44px;
+    max-inline-size: calc(100% - 196px);
+    margin: 0;
+    padding: 4px;
+    border: 0;
+    gap: 8px;
+  }
+  .admin #adminSidebar .account .avatar { inline-size: 29px; block-size: 29px; }
+  .admin #adminSidebar .account small { display: none; }
+  @supports (position-area: block-start) {
+    .account-menu[popover] { position-area: block-end span-inline-start; }
+  }
+}
+
+.login-layout {
+  width: min(100%, 760px);
+  margin-inline: auto;
+  padding: clamp(24px, 7vh, 64px) clamp(16px, 5vw, 36px) 32px;
+}
+.login-header { margin-block-end: 24px; }
+.login-header .brand { padding: 0; margin-block-end: 24px; }
+.login-header h1 { margin-block-end: 6px; }
+.login-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.login-choices section {
+  padding: clamp(16px, 4vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+}
+.login-choices h2 { margin-block-end: 16px; }
+.login-accounts, .login-form { display: grid; gap: 10px; }
+.login-accounts button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.login-accounts button:hover:not(:disabled) { background: var(--pale); filter: none; }
+.login-accounts button:disabled, .login-form button:disabled { opacity: .65; }
+.login-accounts button .account-chevron { transform: rotate(-45deg); }
+.login-form .formlabel { margin: 0; }
+.login-form input { min-inline-size: 0; min-block-size: 44px; }
+.login-form .primary { min-block-size: 44px; margin-block-start: 4px; }
+.login-message { font-size: .9rem; }
+.login-accounts:not(:empty) + .login-message:not(:empty),
+#retryAccounts { margin-block-start: 10px; }
+.login-page noscript p { margin-block-start: 16px; }
+
+@media (max-width: 560px) {
+  .login-choices { grid-template-columns: minmax(0, 1fr); }
+  .login-header h1 { font-size: 1.65rem; }
+}

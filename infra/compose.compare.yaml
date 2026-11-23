@@ -1,0 +1,12 @@
+# Isolated employee workflow comparison using the normal Hermes and Hub images.
+services:
+  hub:
+    environment:
+      LOCAL_MLX_ENABLED: "1"
+      SATO_PORT: 18831
+      TANAKA_PORT: 18832
+      ADMIN_PORT: 18833
+    ports: !override
+      - "127.0.0.1:18831:18831"
+      - "127.0.0.1:18832:18832"
+      - "127.0.0.1:18833:18833"

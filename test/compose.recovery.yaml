@@ -1,0 +1,13 @@
+# Used with infra/compose.compare.yaml in a disposable project only.
+services:
+  hub:
+    environment:
+      SATO_URL: http://recovery-proxy:8642
+      SATO_RECEIPTS_URL: http://recovery-proxy:8642
+  recovery-proxy:
+    environment:
+      RECOVERY_FAULT: ${RECOVERY_FAULT:-result-read}
+    image: node@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+    command: [node, /test/proxy.mjs]
+    volumes: ["./test/recovery-proxy.mjs:/test/proxy.mjs:ro"]
+    networks: [sato-net]
