@@ -60,34 +60,11 @@ services:
       AI_HUB_RUNTIME_ALIASES: ${AI_HUB_RUNTIME_ALIASES-}
       AI_HUB_LOCAL_DIRECTORY_FILE: ${AI_HUB_LOCAL_DIRECTORY_FILE-}
     volumes:
-      - ./personal-work.mjs:/app/personal-work.mjs:ro
-      - ./reservation-plan.mjs:/app/reservation-plan.mjs:ro
-      - ./work-split.mjs:/app/work-split.mjs:ro
-      - ./inquiries.mjs:/app/inquiries.mjs:ro
-      - ${AI_HUB_INQUIRY_DESKS:-./inquiry-desks.json}:/app/inquiry-desks.json:ro
-      - ./csv-skill.mjs:/app/csv-skill.mjs:ro
-      - ./libraries.mjs:/app/libraries.mjs:ro
-      - ./document-text.mjs:/app/document-text.mjs:ro
+      - ./src:/app/src:ro
+      - ${AI_HUB_INQUIRY_DESKS:-./src/inquiries/inquiry-desks.json}:/app/src/inquiries/inquiry-desks.json:ro
       - ${AI_HUB_LIBRARY_DIR:-./library-data}:/app/library-data:ro
       - ./server.mjs:/app/server.mjs:ro
-      - ./operations.mjs:/app/operations.mjs:ro
-      - ./usage-report.mjs:/app/usage-report.mjs:ro
-      - ./usage-policy.mjs:/app/usage-policy.mjs:ro
-      - ./catalog.mjs:/app/catalog.mjs:ro
-      - ./model-profiles.mjs:/app/model-profiles.mjs:ro
-      - ./runtime-assignments.mjs:/app/runtime-assignments.mjs:ro
-      - ./gateway.mjs:/app/gateway.mjs:ro
       - ./.runtime/admin-accounts:/run/secrets/admin-accounts:ro
-      - ./admin-auth.mjs:/app/admin-auth.mjs:ro
-      - ./standard-procedures.mjs:/app/standard-procedures.mjs:ro
-      - ./applied-procedure.mjs:/app/applied-procedure.mjs:ro
-      - ./hub.mjs:/app/hub.mjs:ro
-      - ./arrival-waits.mjs:/app/arrival-waits.mjs:ro
-      - ./procedures.mjs:/app/procedures.mjs:ro
-      - ./memberships.mjs:/app/memberships.mjs:ro
-      - ./enterprise-directory.mjs:/app/enterprise-directory.mjs:ro
-      - ./employee-profile.mjs:/app/employee-profile.mjs:ro
-      - ./fixtures.mjs:/app/fixtures.mjs:ro
       - ./public:/app/public:ro
       - ./skills:/app/skills:ro
       - hub-data:/data

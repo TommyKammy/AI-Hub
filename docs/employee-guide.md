@@ -10,7 +10,7 @@
 4. 本文の出典番号から原文を開きます。一意に対応した文や日付を強調し、「資料を並べて比較」で両方の原文を確認できます。同じ仕事で追加質問をすると、回答はメモと別に残ります。「表示する版」「第1版と見比べる」「この版を採用」で採用版を選べます。
 5. 「出典付きでコピー」は表示中の本文と出典一覧をコピーします。「Markdownで保存」は同じ版をファイルに書き出します。
 
-ローカル環境では合成資料を使用します。オフラインの合成モデルは3行要約や箇条書きなどの形式を再現します。自然文による改訂の検証には、Hermes に接続したローカル実モデルを使用できます。ブラウザーでの一連の確認は `node test/memo-workflow-browser.mjs`、比較環境では末尾に `--compare` を付けて実行します。
+ローカル環境では合成資料を使用します。オフラインの合成モデルは3行要約や箇条書きなどの形式を再現します。自然文による改訂の検証には、Hermes に接続したローカル実モデルを使用できます。ブラウザーでの一連の確認は `node test/browser/employee/memo-workflow-browser.mjs`、比較環境では末尾に `--compare` を付けて実行します。
 
 [議事録の貼り付けから修正版のコピーまでの画面・実行記録](../evidence/renewal-employee-workflow.md)
 
@@ -26,11 +26,11 @@
 | 2社の見積を購買向けに比較して | 「参考資料を添付」で2件を同時に選びます。初稿の比較表で各セルの出典番号から原文を開けます。相手の見積に記載がない条件は「要確認（記載なし）」です。「比較表をCSVで保存」で、表示した値・資料名・出典番号を保存できます。 |
 | 次回から結論を先に書いて | 「Hermesにおまかせ」で希望だけを送ると、本人用Hermesがプロフィールに保存します。次の依頼では、希望を入力し直さずに回答を受け取れます。 |
 
-見積比較は、専用比較環境で `node test/quote-comparison-browser.mjs` を実行すると、下書きの再開から原文の表示、CSVのダウンロードと読み戻しまで検証できます。[実モデルの見積比較表](../evidence/quote-comparison.png)
+見積比較は、専用比較環境で `node test/browser/employee/quote-comparison-browser.mjs` を実行すると、下書きの再開から原文の表示、CSVのダウンロードと読み戻しまで検証できます。[実モデルの見積比較表](../evidence/quote-comparison.png)
 
 見積比較を修正したら、修正版の「この版を採用して個人スキルに保存」で、本人用Hermesが比較項目・順序と判断ルールを `SKILL.md` に保存します。「新しい見積2件で使う」から比較基準を確認し、今回のファイルを2件選ぶと、比較表の各セルから今回の原文を開けます。保存したスキルは「自分用の手順」にも表示されます。
 
-専用の比較環境で `node test/general-assistant-browser.mjs` を実行すると、同じ依頼画面から3件を作り、再読み込み後の成果物・根拠と、別の社員からのアクセス制限を確認できます。
+専用の比較環境で `node test/browser/employee/general-assistant-browser.mjs` を実行すると、同じ依頼画面から3件を作り、再読み込み後の成果物・根拠と、別の社員からのアクセス制限を確認できます。
 
 ### 成果物から担当窓口に問い合わせる
 
@@ -54,13 +54,13 @@
 
 [依頼者の解決履歴](../evidence/inquiry-resolved-requester.png)・[担当窓口の解決済み受付票](../evidence/inquiry-resolved-desk.png)
 
-登録先はHub内の受付です。初期設定の窓口と担当者は [inquiry-desks.json](../inquiry-desks.json) にあります。運用時は同じ形式のJSONファイルを `AI_HUB_INQUIRY_DESKS` に指定し、Hubコンテナを再作成してください。指定した所属かつ有効な担当者のいる窓口が社員画面に表示されます。専用比較環境で `node test/inquiry-browser.mjs` を実行すると、依頼者と担当者の両画面で確認できます。
+登録先はHub内の受付です。初期設定の窓口と担当者は [inquiry-desks.json](../src/inquiries/inquiry-desks.json) にあります。運用時は同じ形式のJSONファイルを `AI_HUB_INQUIRY_DESKS` に指定し、Hubコンテナを再作成してください。指定した所属かつ有効な担当者のいる窓口が社員画面に表示されます。専用比較環境で `node test/browser/inquiries/inquiry-browser.mjs` を実行すると、依頼者と担当者の両画面で確認できます。
 
 ### 売上集計を自分用の手順に保存する
 
 完了した集計の「集計条件を自分用に保存」で、金額列、グループ列、採用・除外する値と出力列を確認して名前を付けます。「手順を探す」→「自分用の手順」で手順名を開き、今回のCSVを選んで実行します。保存されるのは集計条件です。各回の入力と合計、採用・除外した行はその回の仕事に残ります。列の並び順を変えたCSVも使えます。必要な列が欠けている場合は受付前に列名を表示します。
 
-今すぐ、日時指定の1回、毎週・毎月の実行に対応します。定期実行は「次回分を確認」で、その回に使うCSVを登録します。未登録の回はスキップします。専用比較環境で `node test/csv-skill-browser.mjs` を実行すると、初回の集計から翌月分の集計まで社員画面で確認できます。`--schedule` を付けると月次予約の次回分も検証します。[翌月CSVの集計と元の行](../evidence/personal-csv-skill.png)
+今すぐ、日時指定の1回、毎週・毎月の実行に対応します。定期実行は「次回分を確認」で、その回に使うCSVを登録します。未登録の回はスキップします。専用比較環境で `node test/browser/employee/csv-skill-browser.mjs` を実行すると、初回の集計から翌月分の集計まで社員画面で確認できます。`--schedule` を付けると月次予約の次回分も検証します。[翌月CSVの集計と元の行](../evidence/personal-csv-skill.png)
 
 ### 社内の資料置き場を登録する
 
@@ -72,7 +72,7 @@ Compose は既定で `library-data` のサンプル規程と申請案内を読�
 | `teams/<所属名>/<置き場名>/` | その所属の社員 |
 | `users/<社員ID>/<置き場名>/` | 本人 |
 
-各置き場の直下にある UTF-8 の TXT・MD、文字を抽出できる PDF・DOCX が対象です。1ファイルは5 MiB・抽出後65,536文字まで、1依頼の検索範囲は12か所・合計16 MiBまでです。社員は送信前に検索範囲を確認できます。Hermes が見つけた資料の本文と版を仕事に保存し、引用した箇所を強調します。専用比較環境の `node test/library-search-browser.mjs` で、横断検索、範囲の限定、該当なしの表示を確認できます。
+各置き場の直下にある UTF-8 の TXT・MD、文字を抽出できる PDF・DOCX が対象です。1ファイルは5 MiB・抽出後65,536文字まで、1依頼の検索範囲は12か所・合計16 MiBまでです。社員は送信前に検索範囲を確認できます。Hermes が見つけた資料の本文と版を仕事に保存し、引用した箇所を強調します。専用比較環境の `node test/browser/employee/library-search-browser.mjs` で、横断検索、範囲の限定、該当なしの表示を確認できます。
 
 | 入口 | 操作 |
 | --- | --- |
@@ -103,7 +103,7 @@ Compose は既定で `library-data` のサンプル規程と申請案内を読�
 
 2026年11月22日のChrome検証では、単発予約の日時変更とHub再起動を経て週報が完成し、Hermes側の受付記録は実行した週報が1件、取り消した予約が0件でした。ローカル実モデル `qwen3.8-flash-next` でも、納品日・月額・担当者の変更と、会議メモを含む2件の成果物からの出典付き要約を確認しました。[旧版と新版の該当箇所を開いた画面](../evidence/daily-work-comparison.png)
 
-社員画面を再検証する場合は、専用の Compose プロジェクト `ai-hub-daily-work` を `compose.yaml` と `infra/compose.compare.yaml` で起動し、`node test/reservation-browser.mjs`、`node test/daily-work-browser.mjs` を順に実行します。前者は専用Hubの再起動とHermes受付記録、後者は下書きから成果物・再通知・月次実行までを確認します。
+社員画面を再検証する場合は、専用の Compose プロジェクト `ai-hub-daily-work` を `compose.yaml` と `infra/compose.compare.yaml` で起動し、`node test/browser/employee/reservation-browser.mjs`、`node test/browser/employee/daily-work-browser.mjs` を順に実行します。前者は専用Hubの再起動とHermes受付記録、後者は下書きから成果物・再通知・月次実行までを確認します。
 
 到着先には、Hub の資料置き場にある本人が参照できるフォルダを使います。開発環境では `LIBRARY_ROOT` 配下の `shared/<フォルダ>`、`teams/<部門>/<フォルダ>`、`users/<社員ID>/<フォルダ>` が対象です。待機を登録した後、取り込み側で UTF-8 のテキスト、Markdown、PDF または Word の完成ファイルを指定名に移動します。Hub は再起動後もその場所を確認し、比較の着手前に所属とファイルの版を再確認します。
 
@@ -118,7 +118,7 @@ Compose は既定で `library-data` のサンプル規程と申請案内を読�
 | 一段落だけ修正する | 成果物の「修正範囲」で段落を選び、修正内容を依頼します。他の行は元版からそのまま保存します。表示する版を切り替えると修正前後と出典を比較でき、「この版を採用」で確定します。 |
 | 報告に前回からの変化を載せる | 週報・月報の「前回の報告と比較」で参照する前回の版を確認します。同じ定期実行の過去の報告があれば先頭に表示します。比較結果は元の報告の該当版にも表示され、前回と今回の出典からそれぞれの元版を開けます。 |
 
-[実モデルで抽出した会議の宿題候補](../evidence/meeting-action-candidates.png)。上記の専用 Compose 環境で `node test/work-followups-browser.mjs` を実行すると、社員画面から6機能を確認できます。`node test/monthly-followup-browser.mjs` は月次の予定を直近の時刻に移し、対象資料の除外と前回の月報との比較を確認します。
+[実モデルで抽出した会議の宿題候補](../evidence/meeting-action-candidates.png)。上記の専用 Compose 環境で `node test/browser/employee/work-followups-browser.mjs` を実行すると、社員画面から6機能を確認できます。`node test/browser/employee/monthly-followup-browser.mjs` は月次の予定を直近の時刻に移し、対象資料の除外と前回の月報との比較を確認します。
 
 ## 工程5　完了した依頼から手順を共有する
 
@@ -128,7 +128,7 @@ Compose は既定で `library-data` のサンプル規程と申請案内を読�
 
 共有対象は、実行に使った更新商談手順から作る手順本文、メモの構成、営業企画部の公開情報です。元の依頼との対応は Hub 内に保存します。再利用の各段階で、サーバーが所属と公開版のハッシュを確認し、本人の資料を取得します。公開版は SQLite に保存し、確認済みの本文を社員コンテナの Runs API に渡します。
 
-[工程5の検証記録](../evidence/stage5-procedure-sharing.md) に、2モデルの結果と案件分離の照合内容を記録しています。Chrome と Playwright が利用できる環境で `node test/procedure-browser.mjs` を実行すると、起動済みの比較環境で完了・申請・公開・再利用を再現できます。`--local` で通常環境を使用します。実行ごとに2件の合成依頼と1件の公開手順が残ります。
+[工程5の検証記録](../evidence/stage5-procedure-sharing.md) に、2モデルの結果と案件分離の照合内容を記録しています。Chrome と Playwright が利用できる環境で `node test/browser/employee/procedure-browser.mjs` を実行すると、起動済みの比較環境で完了・申請・公開・再利用を再現できます。`--local` で通常環境を使用します。実行ごとに2件の合成依頼と1件の公開手順が残ります。
 
 ### 公開手順の改訂と取消
 
@@ -136,4 +136,4 @@ Compose は既定で `library-data` のサンプル規程と申請案内を読�
 
 **公開を取り消す → 公開取消を確定する** は、その手順の全版に適用されます。社員の一覧から消え、APIで新規利用や再開を要求しても拒否されます。確認待ちの依頼には回答を保存できますが、メモ作成を起動せず、依頼詳細に停止状態を表示します。取消前に完了したメモは引き続き開けます。取消前に送信を開始した処理は先方で完了する場合があります。
 
-[版の切替と追加送信の検証記録](../evidence/procedure-lifecycle.md) ／ [再現用ブラウザテスト](../test/procedure-lifecycle.mjs)
+[版の切替と追加送信の検証記録](../evidence/procedure-lifecycle.md) ／ [再現用ブラウザテスト](../test/browser/employee/procedure-lifecycle.mjs)

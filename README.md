@@ -7,8 +7,8 @@
 | 目的 | 開く場所 |
 | --- | --- |
 | 開発版をブラウザで確認する | [社員ホーム](http://127.0.0.1:18731/) · [アカウント選択](http://127.0.0.1:18731/login) · [管理者画面](http://127.0.0.1:18733/admin.html) |
-| 画面を変更する | [操作モック](ai-hub-home-mockup.html) · [配信中の画面のソース](public/) · [モックとの比較テスト](test/mock-navigation-browser.mjs) |
-| API・永続化・Hermesの実行を変更する | [実装とローカル検証](docs/development.md) · [HTTP入口](server.mjs) · [依頼の保存と実行](hub.mjs) |
+| 画面を変更する | [操作モック](docs/mockups/ai-hub-home-mockup.html) · [配信中の画面のソース](public/) · [モックとの比較テスト](test/browser/shared/mock-navigation-browser.mjs) |
+| API・永続化・Hermesの実行を変更する | [実装とローカル検証](docs/development.md) · [HTTP処理](src/http/server.mjs) · [依頼の保存と実行](src/jobs/hub.mjs) |
 | 操作や権限を確認する | [社員画面の操作](docs/employee-guide.md) · [管理者の運用](docs/admin-guide.md) |
 | 配置案の背景を確認する | [Opus独立レビュー](docs/reviews/Claude-Opus-review-report.md) · [当時のレビュー依頼](docs/reviews/Claude-Opus-review-request.md) |
 
@@ -42,9 +42,9 @@ Node.js のテストは `npm test` で実行します。画面を変更した場
 
 ```sh
 npm ci
-node test/session-browser.mjs
+node test/browser/shared/session-browser.mjs
 ```
 
 Wrangler と Playwright はこのリポジトリの開発依存です。`npm ci` でロックファイルの版を導入し、`./node_modules/.bin/wrangler --version` で確認できます。ブラウザテストにはホストにインストールした Chrome を使用します。
 
-Cloudflare のローカル検証は [test](test/) 配下の `cloudflare-*` から選びます。検証結果は `evidence/`、認証情報とローカル起動設定は `.runtime/` にあります。
+社員・管理者・受付のブラウザテスト、Python のテスト、Compose と Cloudflare の結合試験は [実装とローカル検証](docs/development.md#検証) を参照してください。検証結果は `evidence/`、認証情報とローカル起動設定は `.runtime/` にあります。

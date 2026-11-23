@@ -1,8 +1,8 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
-import { validAdminId } from "../admin-auth.mjs";
+import { validAdminId } from "../src/http/admin-auth.mjs";
 
-import { adminActor } from "../fixtures.mjs";
+import { adminActor } from "../src/fixtures.mjs";
 
 const requested = process.argv.slice(2);
 if (!requested.every(validAdminId)) throw Error("管理者IDは小文字英字で始まる48文字以内の英数字・ピリオド・ハイフン・アンダースコアで指定してください。admin は予約済みです。");

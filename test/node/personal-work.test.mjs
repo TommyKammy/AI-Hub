@@ -1,0 +1,58 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { openHub, createWorker } from "../../src/jobs/hub.mjs";
+import { personalWork, nextWeekly } from "../../src/workspace/personal-work.mjs";
+
+test("週次実行は日本時間の予定枠ごとに一度だけ本人の記録から週報を作る", t => {
+  const hub = openHub(":memory:"); t.after(() => hub.close());
+  const personal = personalWork(hub), now = Date.parse("2026-11-20T15:59:00+09:00");
+  const schedule = personal.schedule("sato",{name:"週報",ask:"今週の仕事を要約",weekday:5,time:"16:00"},now);
+  const due = now + 60000;
+  assert.equal(nextWeekly(now,5,"16:00"),due);
+  const id = hub.create("sato",{kind:"meeting",company:"A社",ask:"個人会議",minutes:"決定した"},"meeting-source-key");
+  hub.db.prepare("UPDATE jobs SET memo='決定事項 [1]',status='done' WHERE id=?").run(id);
+  hub.db.prepare("UPDATE job_notifications SET created=? WHERE job=?").run(now,id);
+  const other = hub.create("tanaka",{kind:"weekly",company:"B社",ask:"他人だけの資料"},"weekly-other-key");
+  hub.db.prepare("UPDATE jobs SET memo='田中のデータ',status='done' WHERE id=?").run(other);
+  personal.runDue(now);
+  assert.equal(personal.overview("sato").schedules[0].last_job,null);
+  personal.runDue(due); personal.runDue(due);
+  const saved = personal.overview("sato").schedules[0];
+  assert.equal(saved.next_run,due+7*86400000);
+  const weekly = hub.get("sato",saved.last_job);
+  assert.equal(weekly.kind,"weekly");
+  assert.match(weekly.sources[0].text,/決定事項/);
+  assert.doesNotMatch(weekly.sources[0].text,/田中/);
+  assert.equal(hub.db.prepare("SELECT count(*) n FROM scheduled_jobs").get().n,1);
+  assert.throws(()=>personal.enableSchedule("tanaka",schedule.id,false),{status:404});
+  personal.enableSchedule("sato",schedule.id,false,now);
+  personal.runDue(due+7*86400000);
+  assert.equal(hub.db.prepare("SELECT count(*) n FROM scheduled_jobs").get().n,1);
+});
+test("採用版の共有は指定相手向けの本文スナップショットで、元資料と社内の質疑を含まない", t => {
+  const hub=openHub(":memory:"); t.after(()=>hub.close()); const personal=personalWork(hub);
+  const id = hub.create("sato",{company:"A社",ask:"更新",minutes:"非共有の議事録"},"private-work-key");
+  hub.db.prepare("UPDATE jobs SET memo='共有用の成果物 [2]',status='done' WHERE id=?").run(id);
+  const args={recipient:"tanaka",version:1};
+  personal.share("sato",id,args); personal.share("sato",id,args);
+  const shares=personal.overview("tanaka").shared; assert.equal(shares.length,1);
+  assert.throws(()=>personal.readShare("sato",shares[0].id),{status:404});
+  assert.throws(()=>hub.get("tanaka",id),{status:404});
+  const snapshot=personal.readShare("tanaka",shares[0].id);
+  assert.equal(snapshot.memo,"共有用の成果物 [2]");
+  assert.deepEqual(Object.keys(snapshot).sort(),["created","memo","sender","title","version"]);
+  hub.db.prepare("UPDATE jobs SET memo='後から変わった本文' WHERE id=?").run(id);
+  assert.equal(personal.readShare("tanaka",shares[0].id).memo,snapshot.memo);
+});
+test("添付の差し替えを重複受付せず、未着手の取り消しはHermesへ送信されない", async t=>{
+  const hub=openHub(":memory:"); t.after(()=>hub.close());
+  const input={company:"A社",ask:"日付を照合",contract:{name:"契約.pdf",text:"第2条 満了日8月末。"}};
+  const id=hub.create("sato",input,"file-request-key");
+  assert.equal(hub.create("sato",input,"file-request-key"),id);
+  assert.throws(()=>hub.create("sato",{...input,contract:{...input.contract,text:"異なる"}},"file-request-key"),{status:409});
+  assert.throws(()=>hub.cancel("tanaka",id),{status:404});
+  hub.cancel("sato",id);hub.cancel("sato",id);
+  await createWorker(hub.db,()=>assert.fail("cancelled job was sent"))();
+  assert.equal(hub.get("sato",id).status,"cancelled");
+  assert.equal(hub.db.prepare("SELECT count(*) n FROM attempts").get().n,0);
+});

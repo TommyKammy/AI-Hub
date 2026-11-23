@@ -14,7 +14,7 @@
 
 ### ローカルのEntraグループ同期
 
-検証用のJSONに `tenant`、`bindings`（各社員の `actor` と `objectId`）、`groups`（グループの `id`、`name`、許可する `models`）を指定します。IDには合成のUUIDを使います。形式の例は [SCIM・モデル選択のブラウザ試験](../test/scim-model-selection-browser.mjs) にあります。
+検証用のJSONに `tenant`、`bindings`（各社員の `actor` と `objectId`）、`groups`（グループの `id`、`name`、許可する `models`）を指定します。IDには合成のUUIDを使います。形式の例は [SCIM・モデル選択のブラウザ試験](../test/browser/admin/scim-model-selection-browser.mjs) にあります。
 
 専用のComposeプロジェクトに次のような上書き設定を加えます。`グループと権限 → Entra ID 同期` で、検証用の配信を確認し、対応するAI Hubグループと受信メンバーを選びます。
 
@@ -110,4 +110,4 @@ API キーの値は Hub プロセスの環境変数に設定します。受付�
 - **モデル設定の変更履歴**では管理者・日時・理由・設定版を確認できます。移行前の公開履歴には当時の版とモデルを表示し、未記録の担当者・理由を補完しません。
 - **モデル利用記録**は依頼IDで絞り込めます。1行は1回のモデル呼び出しまたは送信前の拒否を表します。詳細で照合ID、提供元が返した実モデル、HTTP結果、経過時間、使用量を確認できます。合成モデルのログに同じ照合IDが残ります。通信中断・結果不明・使用量欠落を区別し、会話本文や秘密値は利用記録に保存しません。
 
-ブラウザ検証は [test/emergency-browser.mjs](../test/emergency-browser.mjs) で実行できます。稼働中のローカル合成環境と、現在・直前とも利用可能な別々のモデルを使います。標準モデルを実際に停止し、直前のモデルへ復元した状態を残します。Docker context は `AI_HUB_DOCKER_CONTEXT`、Playwrightの場所は `PLAYWRIGHT_PACKAGE` で指定できます。
+ブラウザ検証は [test/browser/admin/emergency-browser.mjs](../test/browser/admin/emergency-browser.mjs) で実行できます。稼働中のローカル合成環境と、現在・直前とも利用可能な別々のモデルを使います。標準モデルを実際に停止し、直前のモデルへ復元した状態を残します。Docker context は `AI_HUB_DOCKER_CONTEXT`、Playwrightの場所は `PLAYWRIGHT_PACKAGE` で指定できます。

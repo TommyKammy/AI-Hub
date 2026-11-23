@@ -28,20 +28,44 @@ AI Hubのブラウザ入口だけをループバックに公開し、Hermesの�
 
 ## 検証
 
+リポジトリのルートで実行します。Node.js とブラウザのテストに使う依存関係は `npm ci` で用意します。
+
 ```sh
-node --test test/*.test.mjs
-node test/live.mjs
+npm test
+python3 -B -m unittest discover -s test/python
 ```
 
-最初のコマンドは一時SQLiteを使い、受付の重複、所有者制限、段階ごとの実行と回答、結果不明時の扱いを検証します。二つ目は起動済みのCompose環境に対して各社員の依頼を1件ずつ作り、回答・成果物、別社員からの拒否、公開版ハッシュの一致を確かめます。実行後の合成依頼は画面に残ります。
+`npm test` は [`test/node/`](../test/node/) のテストを実行し、一時SQLiteなどを使って受付の重複、所有者制限、実行と回答、結果不明時の扱いを検証します。Python のテストは Hermes の受付記録の読み取りと業務ツールを検証します。
+
+### ブラウザで個別に実行する
+
+Chrome をインストールして、確認したい操作のスクリプトを実行します。接続先のポートや専用の Compose プロジェクトは、スクリプトと各操作ガイドで確認してください。
+
+| 対象 | 実行例 | 前提 |
+| --- | --- | --- |
+| [社員・モックとの比較](../test/browser/shared/mock-navigation-browser.mjs) | `node test/browser/shared/mock-navigation-browser.mjs` | 通常のローカル開発版と管理者アカウントの初期設定 |
+| [管理者](../test/browser/admin/) | `node test/browser/admin/admin-directory-audit-browser.mjs` | テストが一時ディレクトリに専用サーバーを起動 |
+| [受付](../test/browser/inquiries/) | `node test/browser/inquiries/inquiry-browser.mjs` | 専用の比較環境。詳しくは[社員画面の操作](employee-guide.md)を参照 |
+| [アカウント切り替え](../test/browser/shared/) | `node test/browser/shared/session-browser.mjs` | 通常のローカル開発版 |
+
+[社員の業務操作ごとのスクリプト](../test/browser/employee/) は [社員画面の操作](employee-guide.md) を参照してください。Playwright は既定で開発依存の `@playwright/test` を使用します。別のインストールを使う場合は `PLAYWRIGHT_PACKAGE` にパッケージ名または絶対パスを指定できます。
+
+### Compose・モデル・Cloudflare の結合試験
+
+`node test/integration/compose/live.mjs` は起動済みのローカル合成環境で社員ごとに1件の依頼を作り、回答・成果物、別社員からの拒否、公開版ハッシュの一致を確かめます。実行後の合成依頼は画面に残ります。
+
+専用プロジェクトで使う Compose の追加設定は [`test/integration/compose/`](../test/integration/compose/) にあります。`compose.yaml` を最初の `-f` に指定すると、追加設定のファイルマウントもリポジトリのルートを基準に解決されます。実モデルとの比較スクリプトは [`test/integration/models/`](../test/integration/models/) にあります。
+
+Cloudflare のローカル検証については [Hermesの受付・結果の復旧](../test/integration/cloudflare-recovery/README.md) と [資料到着時の実行](../test/integration/cloudflare-arrival/README.md) の手順を参照してください。Wrangler は `npm ci` で導入されます。
 
 ## 実装の入口と次の工程
 
 | ファイル | 担当 |
 |---|---|
-| [server.mjs](../server.mjs) | 社員別のローカルHTTP入口、画面・仕事API |
-| [hub.mjs](../hub.mjs) | 依頼・試行の永続化と認可、Hermes Runs API、復旧時の状態遷移 |
-| [fixtures.mjs](../fixtures.mjs) | 合成社員と、日付が食い違う二案件の版付き資料 |
+| [server.mjs](../server.mjs) | ローカルサーバーの起動入口 |
+| [src/http/server.mjs](../src/http/server.mjs) | 社員別のHTTPサーバー、画面・仕事API |
+| [src/jobs/hub.mjs](../src/jobs/hub.mjs) | 依頼・試行の永続化と認可、Hermes Runs API、復旧時の状態遷移 |
+| [src/fixtures.mjs](../src/fixtures.mjs) | 合成社員と、日付が食い違う二案件の版付き資料 |
 | [公開手順](../skills/renewal-brief/SKILL.md) | 両社員の実行に固定する手順本文 |
 | [compose.yaml](../compose.yaml) | 固定digestのイメージ、個人別のHermesと専用ボリューム、閉域モデル |
 | [public](../public) | 社員の三画面、質問への回答、出典とメモの表示 |
@@ -51,11 +75,11 @@ node test/live.mjs
 Hermesの仕様参照先は[公式Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server)と[公式Docker構成](https://hermes-agent.nousresearch.com/docs/user-guide/docker)です。
 
 
-管理画面のブラウザ検証には [test/admin-browser.mjs](../test/admin-browser.mjs) を使用します。Chrome を用意し、このリポジトリで `npm ci` を実行してから `node test/admin-browser.mjs` を実行します。現在の合成標準モデルからもう一方に実際に切り替え、公開前の依頼1件と公開後の依頼2件を完了します。公開後の設定と検証用依頼はローカル環境に残ります。
+ローカル合成環境で `node test/browser/admin/admin-browser.mjs` を実行すると、現在の合成標準モデルからもう一方に切り替え、公開前の依頼1件と公開後の依頼2件を完了します。公開後の設定と検証用依頼はローカル環境に残ります。
 
 ## 工程4　Mac の実モデルと合成モデルの比較
 
-[改善前の工程4の結果](../evidence/stage4-a-renewal.md) と [手順 v2 での再検証](../evidence/stage4-a-renewal-v2.md) に、各3回の応答時間・出典・手直し箇所を記録しました。保存済みの v2 結果は `node test/check-renewal-comparison.mjs` で照合できます。新しい比較結果を照合するときは、同じコマンドの引数に生成された JSON ファイルのパスを渡します。
+[改善前の工程4の結果](../evidence/stage4-a-renewal.md) と [手順 v2 での再検証](../evidence/stage4-a-renewal-v2.md) に、各3回の応答時間・出典・手直し箇所を記録しました。保存済みの v2 結果は `node test/integration/models/check-renewal-comparison.mjs` で照合できます。新しい比較結果を照合するときは、同じコマンドの引数に生成された JSON ファイルのパスを渡します。
 
 この Mac の MTPLX はループバックの 8001 番で `qwen3.8-flash-next` を提供します。Colima 内の Hub は `http://host.lima.internal:8001/v1` に接続します。通常環境では `.runtime/local.env` に `LOCAL_MLX_ENABLED=1` を設定し、起動コマンドで Hub を再作成します。管理画面の「Mac ローカル推論（MLX）」でモデルを登録し、接続テストを実行します。全社員への公開は別途操作します。
 
@@ -63,6 +87,6 @@ Hermesの仕様参照先は[公式Runs API](https://hermes-agent.nousresearch.co
 
 ```sh
 docker --context colima-mac-studio-solo compose -p ai-hub-hermes-compare --env-file .runtime/local.env -f compose.yaml -f .runtime/admin-workspaces.json -f infra/compose.compare.yaml up -d --wait
-node test/compare-local.mjs
+node test/integration/models/compare-local.mjs
 docker --context colima-mac-studio-solo compose -p ai-hub-hermes-compare --env-file .runtime/local.env -f compose.yaml -f .runtime/admin-workspaces.json -f infra/compose.compare.yaml stop
 ```
