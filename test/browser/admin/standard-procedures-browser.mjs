@@ -179,6 +179,25 @@ try {
   await staff.getByLabel("依頼内容").waitFor();
   assert.match(await staff.getByLabel("依頼内容").inputValue(), /朝礼/);
 
+  await industryForm.getByLabel("業種パッケージ").selectOption("pharmaceutical");
+  assert.equal(await items.count(), 10);
+  const labelRevision = "電子添文の改訂で、直すべき資材を洗い出す";
+  const supplyFaq = "供給状況のお知らせを、問い合わせ窓口のFAQにする";
+  await industryForm.getByRole("checkbox", {name: supplyFaq}).uncheck();
+  await publish.click();
+  await manager.locator("#industryStatus").getByText("9件の手順を会社標準として公開しました。").waitFor();
+  await staff.goto(employee + "/#catalog");
+  await staff.reload();
+  await staff.locator(".catalog-row").filter({hasText:labelRevision}).waitFor();
+  assert.equal(await staff.locator(".catalog-row").filter({hasText:supplyFaq}).count(), 0);
+  await staff.locator(".catalog-row").filter({hasText:labelRevision}).click();
+  await staff.getByRole("button", {name:"この手順で新しく依頼"}).click();
+  assert.match(await staff.getByLabel("依頼内容").inputValue(), /電子添文の新旧差分/);
+  await publish.click();
+  await manager.locator("#industryStatus").getByText("1件の手順を会社標準として公開しました。").waitFor();
+  assert.ok(await publish.isDisabled());
+  assert.equal(await edit.count(), 18);
+
   const auditor = await browser.newPage({ httpCredentials: { username: "mori", password }, viewport: { width: 390, height: 844 } });
   await auditor.goto(admin + "/admin.html#procedures");
   await auditor.getByRole("region", { name: "ダッシュボード", exact: true }).waitFor();
