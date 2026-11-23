@@ -47,7 +47,7 @@ const documentListing = (folder, file) => ({
   library:folder.id, folder:folder.name, scope:folder.scope, name:file.name,
 });
 
-export async function workspaceDocuments(member, query, db) {
+export async function workspaceDocuments(member, query, db, {nameOnly=false} = {}) {
   const key = query.trim().normalize("NFKC").toLowerCase();
   if (key.length > 200) throw new HubError(400, "検索語を200文字以内にしてください。");
   const result = [];
@@ -56,10 +56,14 @@ export async function workspaceDocuments(member, query, db) {
   for (const folder of available(member, {db})) {
     for (const file of folder.files) {
       const item = documentListing(folder, file);
-      if ((folder.name + " " + file.name).normalize("NFKC").toLowerCase().includes(key)) {
+      const label = nameOnly ? file.name : folder.name + " " + file.name;
+      if (label.normalize("NFKC").toLowerCase().includes(key)) {
+        if (nameOnly && !arrivalDocument(member, folder.id, file.name, db)?.read) continue;
         result.push(item);
+        if (nameOnly && result.length===20) return {documents:result, skipped};
         continue;
       }
+      if (nameOnly) continue;
       const entry = arrivalDocument(member, folder.id, file.name, db);
       if (!entry?.read) continue;
       if (entry.size > remaining) {
@@ -78,7 +82,7 @@ export async function workspaceDocuments(member, query, db) {
       }
     }
   }
-  return {documents:result.filter(item => arrivalDocument(member,item.library,item.name,db)?.read), skipped};
+  return {documents:nameOnly ? result : result.filter(item => arrivalDocument(member,item.library,item.name,db)?.read), skipped};
 }
 
 export async function workspaceDocument(member, library, name, db) {

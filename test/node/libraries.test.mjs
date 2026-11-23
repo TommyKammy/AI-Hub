@@ -4,8 +4,8 @@ import {randomUUID} from "node:crypto";
 import {mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {openHub, workPassages} from "../../src/jobs/hub.mjs";
-import {listLibraries, librarySelection, searchLibraries, workspaceDocument, workspaceDocuments} from "../../src/documents/libraries.mjs";
+import {createWorker, openHub, workPassages} from "../../src/jobs/hub.mjs";
+import {listLibraries, librarySelection, searchLibraries, updateManagedLibrary, workspaceDocument, workspaceDocuments} from "../../src/documents/libraries.mjs";
 import {transfer} from "../../src/identity/memberships.mjs";
 
 function fixture(t) {
@@ -79,4 +79,34 @@ test("業務スペースは本人が開ける原文を検索し、この資料�
   assert.throws(()=>hub.create("sato",{...input,library_document:"資料.md"},key),{status:409});
   rmSync(join(root,folder,file));
   assert.throws(()=>hub.create("sato",input,randomUUID()),{status:403});
+});
+
+test("@の資料名候補と依頼で同名の資料を区別し、受付後の公開停止を実行時に再確認する", async t=>{
+  const {root,member}=fixture(t), hub=openHub(":memory:");
+  t.after(()=>hub.close());
+  const teamFolder="teams/営業企画部/規程", name="資料.md";
+  mkdirSync(join(root,teamFolder));
+  writeFileSync(join(root,teamFolder,name),"第1条　出張の事前申請は部門ポータルから行う。");
+  const candidates=async query=>(await workspaceDocuments(member,query,hub.db,{nameOnly:true})).documents;
+  assert.deepEqual(new Set((await candidates("資料．ＭＤ")).map(({library,folder,scope})=>[library,folder,scope])),new Set([
+    ["shared/規程","規程","全社員"],[teamFolder,"規程","部門"],
+    ["teams/営業企画部/案内","案内","部門"],["users/sato/草案","草案","自分のみ"],
+  ]));
+  assert.deepEqual(await candidates("事前申請"),[]);
+  const input={kind:"assistant",company:"A社",ask:"出張の事前申請先を教えてください。",
+    standard_workflow:"source-answer",library_ids:[teamFolder],library_document:name};
+  assert.throws(()=>hub.create("sato",{...input,library_ids:["users/tanaka/私用"]},randomUUID()),{status:403});
+  const id=hub.create("sato",input,randomUUID());
+  const {sources}=await searchLibraries(member,input.library_ids,"事前申請",[],workPassages,hub.db,name);
+  assert.deepEqual(sources.map(({library,title})=>[library,title]),[[teamFolder,name]]);
+  assert.match(sources[0].text,/部門ポータル/);
+  updateManagedLibrary(hub.db,{id:teamFolder,action:"pause",base:0,reason:"資料接続を停止"},"aoki");
+  assert.ok((await candidates(name)).every(doc=>doc.library!==teamFolder));
+  assert.throws(()=>hub.create("sato",input,randomUUID()),{status:403});
+
+  const dispatched=[];
+  const tick=createWorker(hub.db,(...args)=>{dispatched.push(args);});
+  await tick();
+  assert.equal(hub.get("sato",id).status,"source_blocked");
+  assert.deepEqual(dispatched,[]);
 });

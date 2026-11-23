@@ -1,6 +1,7 @@
 import { icon } from "./visual.js";
 import { employeeInquiries, versionReceipts } from "./employee-inquiries.js";
 import { workPlanning, installDistribution } from "./work-planning.js";
+import { installRequestDocumentPicker } from "./request-document-picker.js";
 import { mountAnswerSpeech, stopAnswerSpeech } from "./answer-speech.js";
 import { checkSessionResponse, installAccountSession } from "./account-session.js";
 
@@ -56,7 +57,7 @@ const labels = {
   waiting: "確認待ち",
   source_waiting: "資料待ち",
   source_expired: "資料待ちの期限切れ",
-  source_blocked: "資料待ちを停止",
+  source_blocked: "資料を参照できないため停止",
   held: "モデル停止による保留",
   held_dispatched: "実行中にモデル停止",
   procedure_revoked: "手順の利用条件が変わったため停止",
@@ -313,6 +314,8 @@ function clearComposerDocument(form,clearScope=false) {
   delete form.dataset.libraryDocument;
   delete form.dataset.documentLibrary;
   form.querySelector("[data-document-pin]").textContent="";
+  const preview=form.querySelector('[data-op="preview-request-document"]');
+  if (preview) preview.hidden=true;
   form.querySelector('[data-op="clear-document"]').hidden=true;
 }
 function selectedLibraryDocument(form,data) {
@@ -320,25 +323,41 @@ function selectedLibraryDocument(form,data) {
 }
 function fillComposerDocument(form) {
   if (!composerDocument) return;
-  const {library,name}=composerDocument;
+  const doc=composerDocument;
   composerDocument=null;
-  const boxes=Array.from(form.querySelectorAll("[name=library]"));
-  if (!boxes.some(input=>input.value===library)) {
-    form.querySelector(".form-error").textContent="資料の閲覧範囲が変わりました。社内資料を選び直してください。";
-    return;
+  const ask="「"+doc.name+"」について教えてください。";
+  pinComposerDocument(form,doc,ask,ask.length,ask);
+}
+function pinComposerDocument(form,doc,ask,caret,example="") {
+  const {library,name,folder,scope}=doc;
+  const picker=form.querySelector("[data-library-picker] fieldset");
+  if (![...picker.querySelectorAll("[name=library]")].some(input=>input.value===library)) {
+    const label=document.createElement("label"), input=document.createElement("input");
+    label.className="library-choice";
+    input.type="checkbox";
+    input.name="library";
+    input.value=library;
+    input.dataset.libraryName=folder;
+    label.append(input," "+folder+"（"+scope+"）");
+    picker.append(label);
   }
   clearComposerProcedure(form);
   form.elements.kind.value="assistant";
-  form.elements.ask.value="「"+name+"」について教えてください。";
-  form.dataset.example=form.elements.ask.value;
+  if (form.elements.timing.value==="arrival") form.elements.timing.value="now";
+  form.elements.ask.value=ask;
+  form.dataset.example=example;
   form.dataset.workflow="source-answer";
   form.dataset.libraryDocument=name;
   form.dataset.documentLibrary=library;
-  for (const box of boxes) box.checked=box.value===library;
-  form.querySelector("[data-document-pin]").textContent="質問する資料　"+name;
+  for (const box of picker.querySelectorAll("[name=library]")) box.checked=box.value===library;
+  form.querySelector("[data-document-pin]").textContent="質問する資料　"+name+"（"+folder+" ・ "+scope+"）";
+  form.querySelector('[data-op="preview-request-document"]').hidden=false;
   form.querySelector('[data-op="clear-document"]').hidden=false;
+  form.querySelector(".source-preview").open=true;
+  form.querySelector(".form-error").textContent="";
   refreshSources(form);
   form.elements.ask.focus();
+  form.elements.ask.setSelectionRange(caret,caret);
 }
 function consultationCatalog(current,version) {
   const workflowIds=(workspace.standardWorkflows || []).filter(item=>
@@ -500,6 +519,9 @@ function workPage(path) {
 function workDocumentParams(library,name) {
   return new URLSearchParams({library,name}).toString();
 }
+function documentPreview(doc) {
+  return '<p class="meta">'+esc([doc.folder,doc.scope].filter(Boolean).join(" ・ "))+'</p><p class="doc-body">'+esc(doc.text)+'</p>';
+}
 async function refreshWorkDocuments(field) {
   if (!field?.isConnected) return;
   const request=++workDocumentRequest, query=field.value.trim(), results=$("#workDocResults"), status=$("#workDocStatus");
@@ -654,8 +676,8 @@ function minutesField(formId) {
     '<div class="formlabel" data-paste><label data-note-label for="' + formId + '-minutes">議事録の本文</label><textarea class="field" id="' + formId + '-minutes" aria-describedby="' + formId + '-note-help" name="minutes" rows="4" maxlength="6000" placeholder="今回の商談議事録を貼り付けてください"></textarea></div>' +
     '<small data-note-help id="' + formId + '-note-help">6,000文字まで。空欄の場合は案件の商談議事録を使います。</small></details>' +
     '<details data-library-picker hidden><summary>社内の資料置き場を選ぶ</summary><p>社内の規程・用語・申請案内を質問すると、置き場を選んでいない場合は閲覧できる範囲を検索します。</p><fieldset><legend>今回検索する置き場</legend>'+
-    (workspace.libraries || []).map(l=>'<label class="library-choice"><input type="checkbox" name="library" value="'+esc(l.id)+'"> '+esc(l.name)+'（'+esc(l.scope)+'・'+l.count+'件）</label>').join("")+
-    '</fieldset></details><details class="source-preview"><summary>今回使う資料を確認</summary><p data-library-preview hidden></p><dl>' +
+    (workspace.libraries || []).map(l=>'<label class="library-choice"><input type="checkbox" name="library" value="'+esc(l.id)+'" data-library-name="'+esc(l.name)+'"> '+esc(l.name)+'（'+esc(l.scope)+'・'+l.count+'件）</label>').join("")+
+    '</fieldset></details><details class="source-preview"><summary>今回使う資料を確認</summary><p data-library-preview hidden></p><p data-library-document-preview hidden></p><dl>' +
     '<dt data-preview-name>[1] ' + esc(contract.title) + '</dt><dd data-preview-contract>' + esc(contract.text) + '</dd>' +
     '<dt data-preview-second hidden></dt><dd data-preview-second-text hidden></dd>' +
     '<dt data-preview-meeting>[2] ' + esc(minutes.title) + '</dt><dd data-preview-minutes>' + esc(minutes.text) + '</dd></dl></details>' +
@@ -673,7 +695,7 @@ function refreshSources(form) {
   const multi=task?.id==="assistant", extra=attachment?.second_attachment;
   const arrivalOption=form.elements.timing?.querySelector('[value="arrival"]');
   if (arrivalOption) {
-    arrivalOption.disabled=Boolean(!multi || form.dataset.draftId);
+    arrivalOption.disabled=Boolean(!multi || form.dataset.draftId || form.dataset.libraryDocument);
     arrivalOption.hidden=arrivalOption.disabled;
     if (arrivalOption.disabled && form.elements.timing.value==="arrival") form.elements.timing.value="now";
   }
@@ -690,12 +712,15 @@ function refreshSources(form) {
   }
   const minutes = waits ? "" : form.elements.minutes.value.trim();
   const picker=form.querySelector("[data-library-picker]");
-  picker.hidden=waits || !multi || !workspace.libraries?.length;
+  picker.hidden=waits || !multi || (!workspace.libraries?.length && !form.dataset.libraryDocument);
   picker.querySelector("fieldset").disabled=picker.hidden;
-  const chosen=multi && !waits ? Array.from(form.querySelectorAll("[name=library]:checked"),box=>workspace.libraries.find(l=>l.id===box.value)?.name).filter(Boolean) : [];
+  const chosen=multi && !waits ? Array.from(form.querySelectorAll("[name=library]:checked"),box=>box.dataset.libraryName) : [];
   const preview=form.querySelector("[data-library-preview]");
   preview.hidden=!chosen.length;
   preview.textContent="検索する置き場　"+chosen.join("、");
+  const pinned=form.querySelector("[data-library-document-preview]");
+  pinned.hidden=!form.dataset.libraryDocument;
+  pinned.textContent=form.querySelector("[data-document-pin]")?.textContent || "";
   form.elements.contractFile.multiple=multi && !waits;
   const fileLabel = waits ? "先に届いた見積を1件添付（必須）" : multi ? "参考資料を添付（2件まで同時選択）" : general ? "参考資料を添付" : "契約書を添付";
   if (form.id === "request") form.elements.contractFile.setAttribute("aria-label", fileLabel);
@@ -907,10 +932,13 @@ function home() {
   const expired = workspace.jobs.filter(j => j.status === "source_expired");
   return (
     '<form id="request" class="request-composer" aria-label="Hermesに相談" method="post" action="/api/jobs" data-actor="' + esc(e.actor) + '" data-owner-team="' + esc(e.team) + '">' +
-    '<label class="visually-hidden" for="requestAsk">依頼内容</label><textarea id="requestAsk" rows="2" name="ask" required maxlength="4000" placeholder="何を手伝いましょうか？"></textarea>' +
+    '<label class="visually-hidden" for="requestAsk">依頼内容</label><textarea id="requestAsk" rows="2" name="ask" required maxlength="4000" placeholder="何を手伝いましょうか？" aria-controls="requestDocumentOptions" aria-describedby="requestDocumentHelp"></textarea>' +
+    '<p id="requestDocumentHelp" class="meta">「@」で社内資料を選べます。</p>' +
+    '<div class="request-document-picker" data-document-picker hidden><p class="meta" role="status"></p><ul id="requestDocumentOptions" role="listbox" aria-label="資料の候補" hidden></ul></div>' +
     '<ul class="request-attachment" data-file-previews aria-label="添付資料"></ul>' +
     '<p class="meta" data-composer-procedure></p>' +
     '<p class="meta" data-document-pin></p>' +
+    '<button type="button" class="link" data-op="preview-request-document" hidden>原文を開く</button>' +
     '<button type="button" class="link" data-op="clear-document" hidden>資料の指定を外す</button>' +
     '<details data-preference-preview hidden></details>' +
     '<div class="request-toolbar">' +
@@ -1162,6 +1190,8 @@ function detail(j) {
     content = '<h2>待機期限を過ぎました</h2><p>見積の比較は実行されていません。</p>';
   else if (wait?.reason && arrivalReasons[wait.reason])
     content = '<h2>資料待ちを停止しました</h2><p>'+arrivalReasons[wait.reason]+'</p>';
+  else if (j.status === "source_blocked")
+    content = '<h2>資料を参照できないため停止しました</h2><p>実行時に指定された資料または資料置き場を参照できませんでした。新しい依頼で利用できる資料を選び直してください。</p>';
   else if (j.status === "waiting")
     content =
       '<div class="engine engine-note">' +
@@ -1425,6 +1455,7 @@ function display(ticket,shared) {
   }
   const request = $("#request");
   if (request && existingRequest !== request) {
+    installRequestDocumentPicker(request,api,(doc,ask,caret)=>pinComposerDocument(request,doc,ask,caret),showDisabled);
     refreshSources(request);
     const key = receiptKey(workspace.employee.actor);
     if (key) checkRequestReceipt(request, workspace.employee.actor, key);
@@ -1834,17 +1865,31 @@ document.addEventListener("click", async (e) => {
     b.form.elements.ask.focus();
     return;
   }
+  if (op==="preview-request-document") {
+    const form=b.form, {documentLibrary:library,libraryDocument:name}=form.dataset;
+    const current=()=>form.isConnected && form.dataset.documentLibrary===library && form.dataset.libraryDocument===name;
+    b.disabled=true;
+    try {
+      const doc=await api("/api/workspace/document?"+workDocumentParams(library,name));
+      if (current()) modal(doc.name,documentPreview(doc));
+    } catch(error) {
+      if (current() && !showDisabled(error)) form.querySelector(".form-error").textContent=error.message;
+    } finally {
+      b.disabled=false;
+    }
+    return;
+  }
   if (op.startsWith("work-document/") || op.startsWith("ask-document/")) {
     const params=new URLSearchParams(op.slice(op.indexOf("/")+1)), from=location.hash;
     b.disabled=true;
     try {
       const doc=await api("/api/workspace/document?"+params);
       if (location.hash!==from) return;
-      if (op.startsWith("work-document/")) modal(doc.name,'<p class="meta">'+esc([doc.folder,doc.scope].filter(Boolean).join(" ・ "))+'</p>'+
-        '<p class="doc-body">'+esc(doc.text)+'</p><div class="actions">'+
+      if (op.startsWith("work-document/")) modal(doc.name,documentPreview(doc)+'<div class="actions">'+
         button("この資料に質問","ask-document/"+workDocumentParams(doc.library,doc.name),"primary")+'</div>');
       else {
-        composerDocument={library:doc.library,name:doc.name};
+        const {library,name,folder,scope}=doc;
+        composerDocument={library,name,folder,scope};
         freshComposer=true;
         if ($("#dialog").open) $("#dialog").close();
         go("home");

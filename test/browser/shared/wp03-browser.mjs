@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import {verifyDocumentMentions} from "../../support/document-mentions-scenario.mjs";
 import { listenGateway } from "../../../src/hermes/gateway.mjs";
 import { seedLegacyWorkspace, verifyLegacyWorkspace } from "../../support/legacy-workspace-fixture.mjs";
 
@@ -158,7 +159,7 @@ async function screenshot(page, name) {
 const jobRequest = path => response => new URL(response.url()).pathname === path;
 const file = (name, text) => ({ name, mimeType: "text/plain", buffer: Buffer.from(text) });
 
-try {
+async function runScenario() {
   await mkdir(accounts, { mode: 0o700 });
   const legacyId = seedLegacyWorkspace(join(dir,"hub.sqlite"));
   const library = join(libraryRoot, "shared", "規程");
@@ -193,6 +194,9 @@ try {
   workGateway = listenGateway(gatewayDb, "sato", "127.0.0.1", 0);
   peerGateway = listenGateway(gatewayDb, "tanaka", "127.0.0.1", 0);
   await Promise.all([once(workGateway, "listening"),once(peerGateway,"listening")]);
+  const auth="Basic "+Buffer.from("aoki:"+password).toString("base64");
+  const mentions=()=>verifyDocumentMentions({browser,sato,tanaka,admin,auth,libraryRoot,db:gatewayDb});
+  if (process.argv.includes("--document-mentions")) return mentions();
   const wide = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await wide.goto(sato);
   await wide.locator("#request").waitFor();
@@ -574,7 +578,6 @@ try {
   await projectForm.getByRole("button",{name:"案件の変更を保存"}).click();
   await wide.getByText("案件の変更を保存しました。",{exact:true}).waitFor();
   assert.equal((await (await fetch(tanaka+"/api/projects/"+projectId)).json()).responsible,"tanaka");
-  const auth="Basic "+Buffer.from("aoki:"+password).toString("base64");
   const directory=await (await fetch(admin+"/api/admin/memberships",{headers:{Authorization:auth}})).json();
   const member=(Array.isArray(directory) ? directory : directory.items || directory.rows).find(person=>person.actor==="tanaka");
   const moved=await fetch(admin+"/api/admin/memberships/tanaka",{
@@ -783,6 +786,8 @@ try {
     appliedPersonal:{version:2,hash:personalQuote.hash,peerDenied:404},
     appliedShared:{version:3,hash:newVersion.hash,criteria:["料金"],sameSourceFiles:true,revokeDenied:423}},null,2));
 
+  await mentions();
+
   const privateJob=await newRequest("MZT の定義を調べて",[],async form=>{
     await form.getByRole("button",{name:"依頼の設定"}).click();
     await form.getByText("社内の資料置き場を選ぶ",{exact:true}).click();
@@ -802,6 +807,10 @@ try {
   await wide.reload();
   await wide.getByText("依頼が見つかりません。",{exact:true}).waitFor();
   console.log(JSON.stringify({privateJob,restrictedSourceAfterTransfer:404,indexRetainedButHidden:true},null,2));
+}
+
+try {
+  await runScenario();
 } finally {
   await browser?.close();
   if (child?.exitCode === null && child.signalCode === null) {

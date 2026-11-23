@@ -80,6 +80,7 @@ const assets = new Map(
     "/employee-inquiries.js": ["employee/employee-inquiries.js", "text/javascript"],
     "/inquiry-screenshot.js": ["employee/inquiry-screenshot.js", "text/javascript"],
     "/work-planning.js": ["employee/work-planning.js", "text/javascript"],
+    "/request-document-picker.js": ["employee/request-document-picker.js", "text/javascript"],
     "/answer-speech.js": ["employee/answer-speech.js", "text/javascript"],
     "/job-chat.css": ["employee/job-chat.css", "text/css"],
     "/style.css": ["shared/style.css", "text/css"],
@@ -317,7 +318,7 @@ function listen(entry, port) {
         const employee = activeMember(hub.db, actor);
         const params = new URL(req.url, "http://" + host).searchParams;
         const result = path.endsWith("/documents")
-          ? await workspaceDocuments(employee, params.get("q") || "", hub.db)
+          ? await workspaceDocuments(employee, params.get("q") || "", hub.db, {nameOnly:params.get("name_only")==="1"})
           : await workspaceDocument(employee, params.get("library"), params.get("name"), hub.db);
         if (activeMember(hub.db, actor).revision !== employee.revision) throw new HubError(409, "所属が変更されました。");
         return json(result);

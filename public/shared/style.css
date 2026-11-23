@@ -1135,7 +1135,37 @@ dialog:has(.source-columns) { width: min(900px, calc(100% - 30px)); }
   line-height: 1.65;
   resize: vertical;
 }
+.request-composer > textarea:focus-visible { outline-color: transparent; }
 .request-composer > textarea::placeholder { color: #676873; }
+#requestDocumentHelp { margin: 0 0 8px; }
+.request-document-picker {
+  margin-block: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.request-document-picker > p { margin: 0; padding: 8px 12px; }
+.request-document-picker ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-block-size: min(16rem, 35dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.request-document-picker [role="option"] {
+  display: grid;
+  gap: 2px;
+  min-block-size: 44px;
+  padding: 6px 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.request-document-picker [role="option"]:hover,
+.request-document-picker [aria-selected="true"] { background: #e9eef8; }
+.request-document-picker [aria-selected="true"] { box-shadow: inset 3px 0 #315ba3; }
+.request-document-picker small { color: var(--muted); }
+.request-composer [data-document-pin] { overflow-wrap: anywhere; }
 .request-toolbar {
   display: flex;
   flex-wrap: wrap;
