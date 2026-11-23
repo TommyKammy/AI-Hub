@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const wrangler = require.resolve("../../../Planning_Pack_v0.1.2/node_modules/wrangler/package.json");
+const wrangler = require.resolve("wrangler/package.json");
 const {Miniflare,convertV4MiniflareOptions} = createRequire(wrangler)("miniflare");
 const dir = await mkdtemp(join(tmpdir(),"aihub-wp08-arrival-"));
 const key = {sato:randomUUID(),tanaka:randomUUID()};

@@ -7,7 +7,7 @@
 ## 再実行
 
 1. [既存の検証環境](../cloudflare-recovery/README.md)の手順で、新しい専用ディレクトリにHub・モデル・実行中継Workerを起動する。先行の検証ジョブは実行せず、新規のD1とHubを使う。
-2. そのディレクトリの下に `arrival/` を作り、ここにある `worker.mjs`、`wrangler.jsonc`、`schema.sql` をコピーする。検証ディレクトリの `.dev.vars` を `arrival/.dev.vars` にもコピーする。既存の検証と同じNode.jsとWranglerを使い、`WRANGLER` にWrangler実行ファイルの絶対パスを設定する。
+2. そのディレクトリの下に `arrival/` を作り、ここにある `worker.mjs`、`wrangler.jsonc`、`schema.sql` をコピーする。検証ディレクトリの `.dev.vars` を `arrival/.dev.vars` にもコピーする。開発版で `npm ci` を済ませ、開発版リポジトリのルートで `export WRANGLER="$PWD/node_modules/.bin/wrangler"` を実行する。
 3. `arrival/` で次を実行する。
 
    ```sh

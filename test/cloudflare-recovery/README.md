@@ -16,18 +16,17 @@
 
 ## このホストで再実行する
 
-前提はColimaの `colima-mac-studio-solo`、Docker Buildx、Node.js 24、Chrome、Planning Packのインストール済みWranglerとPlaywright。Composeでは既存の `ai-hub-hermes-local-hub` イメージを使用する。Colimaからマウント可能なホーム配下に専用ディレクトリを作る。専用プロジェクト名 `cf-hermes-22-lab` とポート19431–19433、19441–19442、19474を使用する。
+前提はColimaの `colima-mac-studio-solo`、Docker Buildx、Node.js 24、Chrome、開発版で `npm ci` により導入したWranglerとPlaywright。Composeでは既存の `ai-hub-hermes-local-hub` イメージを使用する。Colimaからマウント可能なホーム配下に専用ディレクトリを作る。専用プロジェクト名 `cf-hermes-22-lab` とポート19431–19433、19441–19442、19474を使用する。
 
 ```sh
 # 開発版リポジトリのルートで実行
-project="$(cd .. && pwd -P)"
-fixture="$project/hermes-ai-hub/test/cloudflare-recovery"
+project="$(pwd -P)"
+fixture="$project/test/cloudflare-recovery"
 lab_dir="$(mktemp -d "$HOME/.codex/cf-recovery-XXXXXXXX")/lab"
 export PATH="$(brew --prefix node@24)/bin:$PATH"
 export DOCKER_HOST="unix://$HOME/.colima/mac-studio-solo/docker.sock"
 export WRANGLER_SEND_METRICS=false
-wrangler="$project/Planning_Pack_v0.1.2/node_modules/.bin/wrangler"
-export PLAYWRIGHT_PACKAGE="$project/Planning_Pack_v0.1.2/node_modules/@playwright/test"
+wrangler="$project/node_modules/.bin/wrangler"
 export LAB_ADMIN_FILE="$lab_dir/hub/.runtime/admin-accounts/aoki"
 python3 "$fixture/prepare.py" "$lab_dir"
 cd "$lab_dir"

@@ -15,7 +15,7 @@ import { openHub } from "../hub.mjs";
 import { changeUsagePolicy, usagePolicy } from "../usage-policy.mjs";
 import { seedLegacyWorkspace, verifyLegacyWorkspace } from "./legacy-workspace-fixture.mjs";
 
-const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const dir=await mkdtemp(join(tmpdir(),"aihub-model-groups-"));
 const file=join(dir,"hub.sqlite"), accounts=join(dir,"accounts"), directory=join(dir,"directory.json");
 const tenant=randomUUID(), employeeId=randomUUID(), peerId=randomUUID(), groupA=randomUUID(), groupB=randomUUID();

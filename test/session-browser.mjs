@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { adminCredentials, adminHeader } from "./admin-credentials.mjs";
 
-const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const sato = "http://127.0.0.1:" + (process.env.SATO_PORT || 18731);
 const tanaka = "http://127.0.0.1:" + (process.env.TANAKA_PORT || 18732);
 const admin = "http://127.0.0.1:" + (process.env.ADMIN_PORT || 18733);

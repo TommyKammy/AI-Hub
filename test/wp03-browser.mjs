@@ -14,7 +14,7 @@ import { listenGateway } from "../gateway.mjs";
 import { seedLegacyWorkspace, verifyLegacyWorkspace } from "./legacy-workspace-fixture.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 async function openJobOperation(page,name) {
   const record=page.locator("#jobRecord");
   await record.waitFor();

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const directory = await mkdtemp(join(tmpdir(), "ai-hub-standard-procedures-"));
 const accounts = join(directory, "accounts");
 const password = randomBytes(24).toString("hex");

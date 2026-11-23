@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout as delay } from "node:timers/promises";
 import { seedLegacyWorkspace, verifyLegacyWorkspace } from "./legacy-workspace-fixture.mjs";
 
-const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const directory = await mkdtemp(join(tmpdir(), "ai-hub-admin-check-"));
 const file = join(directory, "hub.sqlite"), accounts = join(directory, "accounts");
 const libraries = join(directory, "libraries"), library = join(libraries, "shared", "規程");

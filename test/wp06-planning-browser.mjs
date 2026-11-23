@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
 
-const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const docker=(...args)=>execFileSync("docker",["--context","colima-mac-studio-solo",...args],{encoding:"utf8"});
 const name=process.env.WP06_PROJECT || "ai-hub-wp06";
 const employeePort=Number(process.env.WP06_EMPLOYEE_PORT || 19931);

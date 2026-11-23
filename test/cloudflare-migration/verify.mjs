@@ -9,7 +9,7 @@ import { createWorker, openHub } from "../../hub.mjs";
 import { setMemberActive } from "../../memberships.mjs";
 
 const require = createRequire(import.meta.url);
-const wrangler = require.resolve("../../../Planning_Pack_v0.1.2/node_modules/wrangler/package.json");
+const wrangler = require.resolve("wrangler/package.json");
 const {Miniflare,convertV4MiniflareOptions} = createRequire(wrangler)("miniflare");
 const dir = await mkdtemp(join(tmpdir(),"aihub-wp08-migration-"));
 const {db,create,revise,adopt,get} = openHub(join(dir,"old.sqlite"));

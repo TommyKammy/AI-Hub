@@ -11,7 +11,7 @@ import { recentWeekday } from "../../reservation-plan.mjs";
 
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const wrangler=process.env.WP06_WRANGLER_PATH ||
-  fileURLToPath(new URL("../../../Planning_Pack_v0.1.2/node_modules/wrangler/bin/wrangler.js",import.meta.url));
+  fileURLToPath(new URL("../../node_modules/.bin/wrangler",import.meta.url));
 const wranglerVersion=execFileSync(process.execPath,[wrangler,"--version"],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
 const directory=await mkdtemp(join(root,".runtime","wp06-cron-"));
 const project=process.env.WP06_PROJECT || "ai-hub-wp06";

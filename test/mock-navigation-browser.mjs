@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createRequire } from "node:module";
 import { adminCredentials } from "./admin-credentials.mjs";
 
-const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "playwright");
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PACKAGE || "@playwright/test");
 const origin = process.env.EMPLOYEE_ORIGIN || "http://127.0.0.1:18731";
 const admin = process.env.ADMIN_ORIGIN || "http://127.0.0.1:18733";
 const output = process.env.PARITY_SCREENSHOTS;
