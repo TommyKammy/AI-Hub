@@ -145,7 +145,7 @@ export function personalWork(hub) {
     return db.prepare(`SELECT j.id,j.ask,COALESCE(v.memo,j.memo) memo,COALESCE(j.adopted_version,
       (SELECT max(version) FROM memo_versions last WHERE last.job_id=j.id AND last.memo IS NOT NULL),1) version
       FROM jobs j LEFT JOIN memo_versions v ON v.job_id=j.id AND v.version=j.adopted_version
-      WHERE j.actor=? AND j.memo IS NOT NULL AND (?='all' OR j.kind=?) AND j.id IN (SELECT id FROM permitted_job_teams)
+      WHERE j.actor=? AND j.id NOT IN (SELECT job FROM deleted_jobs) AND j.memo IS NOT NULL AND (?='all' OR j.kind=?) AND j.id IN (SELECT id FROM permitted_job_teams)
       AND j.id NOT IN (SELECT job FROM scheduled_jobs)
       AND COALESCE((SELECT MIN(created) FROM job_notifications n WHERE n.job=j.id AND n.status='done'),j.created)
       BETWEEN ? AND ? ORDER BY j.created DESC,j.rowid DESC LIMIT 40`).all(s.actor,s.source_kind,s.source_kind,due-s.window_days*day+1,due);
@@ -179,12 +179,50 @@ export function personalWork(hub) {
       db.prepare("INSERT INTO scheduled_provenance VALUES(?,?,?,?)").run(job,due-s.window_days*day+1,due,s.timezone);
     db.prepare("UPDATE weekly_schedules SET last_job=? WHERE id=?").run(job,s.id);
   }
+  function deleteJob(actor,id,selected) {
+    const job=hub.get(actor,id);
+    const dependents=db.prepare("SELECT parent FROM split_plans WHERE origin=? AND parent NOT IN (SELECT job FROM deleted_jobs)").all(id);
+    if (dependents.some(row=>!selected.has(row.parent)))
+      throw new HubError(409,"この依頼を使った作業分担があります。作業分担の依頼も一緒に選択してください。");
+    if (db.prepare(`SELECT 1 FROM split_plans p JOIN split_parts s ON s.parent=p.parent
+      WHERE p.aggregate IS NULL AND s.current_job=?`).get(id))
+      throw new HubError(409,"作業分担の集約が終了してから子作業を削除してください。");
+    if (job.status==="held") {
+      const changed=db.prepare(`UPDATE jobs SET status='cancelled' WHERE id=? AND status='held'
+        AND NOT EXISTS (SELECT 1 FROM attempts WHERE job_id=jobs.id AND phase=jobs.phase)`).run(id);
+      if (!changed.changes) throw new HubError(409,"実行結果を確認してから削除してください。");
+    } else if (["scheduled","queued","source_waiting"].includes(job.status)) hub.cancel(actor,id);
+    else if (!["done","failed","cancelled","waiting","membership_blocked","procedure_revoked","source_expired","source_blocked","closed_unconfirmed","account_blocked"].includes(job.status))
+      throw new HubError(409,"処理中の依頼があります。処理が終了してから削除してください。");
+    if (db.prepare("SELECT 1 FROM shared_memos WHERE job_id=? AND revoked_at IS NULL").get(id))
+      throw new HubError(409,"共有中の依頼があります。成果物の共有を解除してから削除してください。");
+    db.prepare("DELETE FROM question_reminders WHERE job=?").run(id);
+    db.prepare("INSERT INTO deleted_jobs VALUES(?)").run(id);
+  }
+  function deleteProcedure(actor,id,team) {
+    const template=db.prepare("SELECT id FROM personal_templates WHERE actor=? AND id=? AND (team IS NULL OR team=?)").get(actor,id,team);
+    if (template) {
+      if (db.prepare("SELECT 1 FROM weekly_schedules WHERE template_id=? AND source_kind='csv' AND enabled=1").get(id))
+        throw new HubError(409,"CSV手順の定期実行を一時停止してから削除してください。");
+      if (db.prepare(`SELECT 1 FROM memo_versions v JOIN jobs j ON j.id=v.job_id
+        WHERE json_extract(v.applied_procedure,'$.key')=? AND j.phase='revise-'||v.version
+        AND j.status NOT IN ('done','failed','cancelled')`).get("personal:"+id))
+        throw new HubError(409,"この手順を使用中の依頼があります。改訂が終了してから削除してください。");
+      db.prepare("DELETE FROM personal_csv_releases WHERE template=?").run(id);
+      db.prepare("DELETE FROM personal_workflow_releases WHERE template=?").run(id);
+      db.prepare("DELETE FROM personal_templates WHERE id=?").run(id);
+    } else {
+      if (!hub.quoteSkills(actor).some(skill=>skill.id===id)) throw new HubError(404,"自分の手順が見つかりません。");
+      db.prepare("INSERT INTO deleted_quote_skills VALUES(?)").run(id);
+    }
+    db.prepare("DELETE FROM procedure_favorites WHERE actor=? AND entry=?").run(actor,"personal:"+id);
+  }
   return {
     overview(actor) {
       const member = activeMember(db, actor);
       return {
         actions: db.prepare(`SELECT a.*,j.ask FROM meeting_actions a JOIN jobs j ON j.id=a.job
-          WHERE a.actor=? AND j.id IN (SELECT id FROM permitted_job_teams) ORDER BY done,due,line`).all(actor),
+          WHERE a.actor=? AND j.id NOT IN (SELECT job FROM deleted_jobs) AND j.id IN (SELECT id FROM permitted_job_teams) ORDER BY done,due,line`).all(actor),
         projects: db.prepare(`SELECT p.id,p.name,p.due,COALESCE(p.responsible,p.actor) responsible
           FROM work_projects p WHERE ${projectScope} ORDER BY p.name`).all({actor,team:member.team,revision:member.revision}),
         drafts: db.prepare("SELECT id,updated,json_extract(content,'$.ask') ask FROM request_drafts WHERE actor=? AND team=? AND submitted_job IS NULL ORDER BY updated DESC")
@@ -195,6 +233,19 @@ export function personalWork(hub) {
         favorites: db.prepare("SELECT entry FROM procedure_favorites WHERE actor=? ORDER BY rowid DESC").all(actor).map(row=>row.entry),
         schedules: db.prepare("SELECT id,name,weekday,time,enabled,next_run,last_job,frequency,month_day,window_days,source_kind,template_id FROM weekly_schedules WHERE actor=? AND (source_kind<>'csv' OR team=?) ORDER BY name").all(actor,member.team).map(s=>({...s,next_run:nextOccurrence(s).run_at})),
       };
+    },
+    deleteItems(actor,kind,ids) {
+      if (!Array.isArray(ids) || !ids.length || !ids.every(id=>typeof id==="string" && id.length>0 && id.length<=80))
+        throw new HubError(400,"削除する項目を選んでください。");
+      return transaction(db,()=>{
+        const member=activeMember(db,actor);
+        const unique=new Set(ids);
+        for (const id of unique) {
+          if (kind==="jobs") deleteJob(actor,id,unique);
+          else deleteProcedure(actor,id,member.team);
+        }
+        return {deleted:unique.size};
+      });
     },
     favorite(actor,input) {
       const member=activeMember(db,actor);
@@ -234,7 +285,7 @@ export function personalWork(hub) {
     project(actor,id) {
       const {member,project}=projectAccess(actor,id);
       const responsible=project.responsible ?? project.actor;
-      const links=db.prepare(`SELECT j.id,p.version FROM project_jobs p JOIN jobs j ON j.id=p.job WHERE p.project=? AND j.actor=?
+      const links=db.prepare(`SELECT j.id,p.version FROM project_jobs p JOIN jobs j ON j.id=p.job WHERE p.project=? AND j.id NOT IN (SELECT job FROM deleted_jobs) AND j.actor=?
         AND j.id IN (SELECT id FROM permitted_job_teams) ORDER BY j.created DESC,j.rowid DESC`).all(id,actor);
       const jobs=links.map(link=>{
         const j=hub.get(actor,link.id);
@@ -243,7 +294,7 @@ export function personalWork(hub) {
           sources:j.sources.map(s=>({id:s.id,title:s.title}))};
       });
       const actions=db.prepare(`SELECT a.* FROM meeting_actions a JOIN project_jobs p ON p.job=a.job
-        WHERE p.project=? AND a.actor=? AND a.done=0 AND a.job IN (SELECT id FROM permitted_job_teams) ORDER BY due,line`).all(id,actor);
+        WHERE p.project=? AND a.job NOT IN (SELECT job FROM deleted_jobs) AND a.actor=? AND a.done=0 AND a.job IN (SELECT id FROM permitted_job_teams) ORDER BY due,line`).all(id,actor);
       const shares=db.prepare(`SELECT s.id,s.sender,s.title,s.version FROM shared_memos s JOIN project_jobs p ON p.job=s.job_id
         WHERE p.project=$id AND (p.version IS NULL OR p.version=s.version) AND ${sharedScope} ORDER BY s.created DESC`)
         .all({id,actor,revision:member.revision});
@@ -572,7 +623,7 @@ export function personalWork(hub) {
         (SELECT MAX(version) FROM memo_versions v WHERE v.job_id=p.id AND v.memo IS NOT NULL),1) AS memo_version,
         COALESCE(last.schedule=current.schedule,0) AS same_schedule FROM jobs p JOIN jobs origin ON origin.id=?
         LEFT JOIN scheduled_jobs current ON current.job=origin.id LEFT JOIN scheduled_jobs last ON last.job=p.id
-        WHERE p.actor=? AND p.status='done' AND p.memo IS NOT NULL AND p.id IN (SELECT id FROM permitted_job_teams)
+        WHERE p.actor=? AND p.id NOT IN (SELECT job FROM deleted_jobs) AND p.status='done' AND p.memo IS NOT NULL AND p.id IN (SELECT id FROM permitted_job_teams)
         AND json_extract(p.sources_json,'$[0].period') IS NULL AND (p.created,p.rowid)<(origin.created,origin.rowid)
         ORDER BY same_schedule DESC,(p.kind=origin.kind) DESC,p.created DESC,p.rowid DESC`).all(id,actor);
     },
@@ -623,6 +674,8 @@ export function personalWork(hub) {
       const member = activeMember(db,actor);
       const schedule = db.prepare("SELECT * FROM weekly_schedules WHERE actor=? AND id=?").get(actor,id);
       if (!schedule || ((schedule.source_kind==="csv" || schedule.planned_libraries!==null) && schedule.team!==member.team)) throw new HubError(404,"定期実行が見つかりません。");
+      if (enabled && schedule.source_kind==="csv" && !db.prepare("SELECT 1 FROM personal_templates WHERE id=?").get(schedule.template_id))
+        throw new HubError(409,"この定期実行の集計手順は削除されています。");
       if (typeof enabled !== "boolean") throw new HubError(400,"利用状態を指定してください。");
       if (Boolean(schedule.enabled) !== enabled) transaction(db, () => {
         db.prepare("DELETE FROM schedule_occurrences WHERE schedule=?").run(id);

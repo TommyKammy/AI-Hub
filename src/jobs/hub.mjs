@@ -197,7 +197,9 @@ export function openHub(path) {
   if (!db.prepare("PRAGMA table_info(memo_versions)").all().some(c=>c.name==="answer_round"))
     db.exec("ALTER TABLE memo_versions ADD COLUMN answer_round INTEGER CHECK(answer_round>0)");
   // Once a memo contains a desk's answer, it has the same team boundary as its receipt.
-  const readableJob=`(j.id IN (SELECT id FROM permitted_job_teams) OR (j.library_selection IS NULL AND j.csv_skill IS NULL AND j.quote_skill_id IS NULL
+  db.exec(`CREATE TABLE IF NOT EXISTS deleted_jobs(job TEXT PRIMARY KEY REFERENCES jobs(id));
+    CREATE TABLE IF NOT EXISTS deleted_quote_skills(skill TEXT PRIMARY KEY REFERENCES quote_skills(id))`);
+  const readableJob=`j.id NOT IN (SELECT job FROM deleted_jobs) AND (j.id IN (SELECT id FROM permitted_job_teams) OR (j.library_selection IS NULL AND j.csv_skill IS NULL AND j.quote_skill_id IS NULL
     AND NOT EXISTS (SELECT 1 FROM arrival_waits a WHERE a.job=j.id AND a.started_at IS NOT NULL)
     AND NOT EXISTS (SELECT 1 FROM memo_versions v WHERE v.job_id=j.id AND
       (v.applied_procedure IS NOT NULL OR (v.answer_inquiry IS NOT NULL AND v.memo IS NOT NULL)))))`;
@@ -235,7 +237,7 @@ export function openHub(path) {
     quoteSkills(actor) {
       activeMember(db,actor);
       return db.prepare(`SELECT s.id,s.job,s.version,s.criteria,s.rules,s.hash,1 AS skill_version FROM quote_skills s JOIN jobs j ON j.id=s.job
-        WHERE j.actor=? AND s.hash IS NOT NULL AND j.id IN (SELECT id FROM permitted_job_teams) ORDER BY s.rowid DESC`)
+        WHERE j.actor=? AND s.id NOT IN (SELECT skill FROM deleted_quote_skills) AND s.hash IS NOT NULL AND j.id IN (SELECT id FROM permitted_job_teams) ORDER BY s.rowid DESC`)
         .all(actor).map(s=>({...s,criteria:JSON.parse(s.criteria),rules:JSON.parse(s.rules)}));
     },
     list(actor) {
@@ -480,6 +482,8 @@ export function openHub(path) {
         throw new HubError(400,"比較する見積書を2件添付してください。");
       const lookup = db.prepare("SELECT id,ask,company,kind,procedure_id,sources_json,library_selection,library_automatic,csv_skill,quote_skill_id,output_format,original_schedule,data_class,standard_workflow,skip_profile,profile_project,personal_template_ref,requested_model_release FROM jobs WHERE actor=? AND request_key=?");
       function existingId(row) {
+        if (db.prepare("SELECT 1 FROM deleted_jobs WHERE job=?").get(row.id))
+          throw new HubError(404,"この依頼は削除されています。");
         if (row.requested_model_release!==requestedModel)
           throw new HubError(409,"同じ受付キーの選択モデルを変更できません。");
         if (row.skip_profile!==skipProfile || row.profile_project!==profileProject)
@@ -527,7 +531,7 @@ export function openHub(path) {
       let csvSkill=null;
       if (input.quote_skill_id !== undefined) {
         const skill = db.prepare(`SELECT s.id FROM quote_skills s JOIN jobs j ON j.id=s.job WHERE s.id=? AND j.actor=?
-          AND s.hash IS NOT NULL AND j.id IN (SELECT id FROM permitted_job_teams)`).get(clean(input.quote_skill_id,80),actor);
+          AND s.id NOT IN (SELECT skill FROM deleted_quote_skills) AND s.hash IS NOT NULL AND j.id IN (SELECT id FROM permitted_job_teams)`).get(clean(input.quote_skill_id,80),actor);
         if (!skill) throw new HubError(404,"この個人スキルは見つかりません。");
         if (kind!=="assistant" || wantsLibraries || csvSkillId || refs || sources.length!==2 || !sources.every(s=>s.attached))
           throw new HubError(400,"今回比較する新しい見積を2件選んでください。");
@@ -661,7 +665,11 @@ export function openHub(path) {
           if (version<2 || !teamPermitsJob(db,id) || !db.prepare("SELECT 1 FROM work_tool_results WHERE job=? AND json_extract(result,'$.tool')='compare_quotes'").get(id))
             throw new HubError(409,"見積比較の修正版を選んでください。");
           const prior=db.prepare("SELECT * FROM quote_skills WHERE job=? AND version=?").get(id,version);
-          if (prior?.hash || (prior?.phase===j.phase && j.status!=="failed")) return;
+          if (prior?.hash) {
+            db.prepare("DELETE FROM deleted_quote_skills WHERE skill=?").run(prior.id);
+            return;
+          }
+          if (prior?.phase===j.phase && j.status!=="failed") return;
           allowFollowup(j);
           const ticket=randomUUID().replaceAll("-","").slice(0,24);
           const phase="learn-quote-"+version+"-"+ticket.slice(0,8);

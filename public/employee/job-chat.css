@@ -30,6 +30,9 @@
 .request-match mark { background: #f6e9c8; color: inherit; }
 .request-reuse { font-size: .8rem; }
 .request-list-actions { margin-block: 16px 24px; }
+.delete-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block: 8px; }
+#deleteItems fieldset { max-height: 45vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+#deleteItems fieldset label { display: flex; align-items: baseline; gap: 8px; padding: 8px; overflow-wrap: anywhere; }
 
 .job-chat { width: min(100%, 850px); margin-inline: auto; }
 .job-chat-head { margin-block-end: 24px; }

@@ -56,3 +56,33 @@ test("添付の差し替えを重複受付せず、未着手の取り消しはHe
   assert.equal(hub.get("sato",id).status,"cancelled");
   assert.equal(hub.db.prepare("SELECT count(*) n FROM attempts").get().n,0);
 });
+
+test("依頼と個人手順の一括削除は本人の項目に限り、途中で拒否されたら全件を戻す", t => {
+  const hub=openHub(":memory:");
+  t.after(()=>hub.close());
+  const personal=personalWork(hub);
+  const input={company:"A社",kind:"weekly",ask:"削除の確認",scheduled_at:Date.now()+3600000};
+  const first=hub.create("sato",input,"delete-first-job");
+  const second=hub.create("sato",input,"delete-second-job");
+  const other=hub.create("tanaka",{...input,company:"B社"},"delete-other-job");
+  assert.throws(()=>personal.deleteItems("sato","jobs",[first,other]),{status:404});
+  assert.equal(hub.get("sato",first).status,"scheduled");
+  assert.deepEqual(personal.deleteItems("sato","jobs",[first,first,second]),{deleted:2});
+  assert.deepEqual(hub.search("sato","削除"),[]);
+  assert.deepEqual(hub.list("sato"),[]);
+  assert.throws(()=>hub.get("sato",second),{status:404});
+  assert.equal(hub.get("tanaka",other).status,"scheduled");
+
+  const template={name:"週報手順",ask:"進捗をまとめて",kind:"weekly"};
+  const mine=personal.saveTemplate("sato",template).id;
+  const theirs=personal.saveTemplate("tanaka",template).id;
+  personal.favorite("sato",{entry:"personal:"+mine,selected:true});
+  assert.throws(()=>personal.deleteItems("sato","procedures",[mine,theirs]),{status:404});
+  assert.throws(()=>personal.deleteItems("sato","procedures",[mine,"renewal-brief"]),{status:404});
+  assert.equal(personal.overview("sato").templates[0].id,mine);
+  assert.deepEqual(personal.deleteItems("sato","procedures",[mine]),{deleted:1});
+  assert.deepEqual(personal.overview("sato").favorites,[]);
+  assert.deepEqual(personal.overview("sato").templates,[]);
+  assert.notEqual(personal.saveTemplate("sato",template).id,mine);
+  assert.equal(personal.overview("tanaka").templates[0].id,theirs);
+});

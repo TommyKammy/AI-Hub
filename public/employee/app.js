@@ -171,7 +171,8 @@ function jobsPage(current) {
   return tabs+
     '<search class="request-search"><label for="jobSearch">依頼文や会話から検索</label>' +
     '<input id="jobSearch" type="search" name="q" aria-controls="jobResults" placeholder="キーワードを入力" autocomplete="off" value="'+esc(requestListQuery)+'"></search>' +
-    '<p id="jobSearchStatus" class="meta" role="status"></p><div id="jobResults" class="request-results"></div>' +
+    '<div class="delete-tools"><p id="jobSearchStatus" class="meta" role="status"></p>'+
+    button("選択して削除","delete-picker/jobs")+'</div><div id="jobResults" class="request-results"></div>' +
     '<div class="actions request-list-actions">'+button("新しく依頼","home","primary","arrow")+
     button("複数の仕事から依頼","combine-work","secondary")+'</div>' +
     draftList() + '</section>';
@@ -246,7 +247,8 @@ function catalogPage() {
     '<div class="workspace-subnav" role="group" aria-label="手順の提供元">'+Object.entries(catalogGroups).map(([group,label])=>
       '<button type="button" data-op="catalog-filter/'+group+'" aria-pressed="'+(catalogFilter.group===group)+'">'+label+'</button>').join("")+
     '</div><label><input id="catalogFavorites" type="checkbox" '+(catalogFilter.favorites ? "checked" : "")+'> お気に入りのみ</label></search>'+
-    '<div class="catalog-tools"><p id="catalogCount" role="status"></p>'+button("手順を作成","save-template","catalog-create")+'</div>'+
+    '<div class="catalog-tools"><p id="catalogCount" role="status"></p>'+button("手順を作成","save-template","catalog-create")+
+    button("選択して削除","delete-picker/procedures")+'</div>'+
     '<div id="catalogResults" class="catalog-results"></div></section>';
 }
 function refreshCatalog() {
@@ -254,6 +256,7 @@ function refreshCatalog() {
   if (!results) return;
   results.innerHTML=catalogRows(catalogFilter.query) || '<p class="empty">条件に合う手順はありません。</p>';
   $("#catalogCount").textContent=results.querySelectorAll(".catalog-row").length+"件の手順";
+  $('[data-op="delete-picker/procedures"]').hidden=!results.querySelector('[data-op^="catalog/personal:"]');
 }
 function showCatalogEntry(item) {
   const favorite=workspace.favorites?.includes(item.key);
@@ -271,7 +274,8 @@ function showCatalogEntry(item) {
     (item.personalTemplate ? button("依頼内容と出力形式を設定","template/"+item.personalTemplate) : '')+
     (item.quote ? button("新しい見積2件で使う","quote-run/"+item.quote) : '')+
     (item.template || item.personalTemplate ? button("定期実行を設定","template-schedule/"+(item.template || item.personalTemplate)) : '')+
-    button(favorite ? "お気に入りを解除" : "お気に入りに追加","favorite-catalog/"+item.key,"secondary")+"</div>");
+    button(favorite ? "お気に入りを解除" : "お気に入りに追加","favorite-catalog/"+item.key,"secondary")+
+    (item.key.startsWith("personal:") ? button("この手順を削除","delete-one/procedures/"+item.id) : "")+"</div>");
 }
 function fillComposerProcedure(form) {
   if (!composerProcedure) return;
@@ -1200,7 +1204,7 @@ function detail(j) {
       "<h2>個人スキルを保存中</h2><p>本人用のHermesが採用版から比較基準を取り出しています。</p>";
   if (j.memo && j.status !== "done")
     content += '<hr class="hr"><div id="memoPanel">' + memoPanel(j) + '</div>';
-  const workActions = button("案件に整理","file-project","secondary") + button("新しい依頼に使う", "repeat", "secondary") +
+  const workActions = button("この依頼を削除","delete-one/jobs/"+j.id) + button("案件に整理","file-project","secondary") + button("新しい依頼に使う", "repeat", "secondary") +
     (versionTool(j,j.adopted_version ?? (j.versions.length===1 ? 1 : null))?.recipe && j.status==="done" && !j.team_denied ?
       button("集計条件を自分用に保存","save-csv-skill","secondary") : button("自分用の手順に保存", "save-template", "link")) +
     (j.versions.length ? button("共有を管理","sent-shares","link") : "");
@@ -1525,6 +1529,7 @@ async function searchJobs(field) {
     if (field.isConnected && field.value.trim() === query) {
       const rows = requestListFilter === "waiting" ? matches.filter(j=>j.status==="waiting") : matches;
       $("#jobResults").innerHTML = jobResults(rows, query);
+      $('[data-op="delete-picker/jobs"]').hidden=!rows.length;
       $("#jobSearchStatus").textContent = query ? "検索結果 "+rows.length+"件" : rows.length+"件の依頼";
     }
   } catch (error) {
@@ -1567,6 +1572,53 @@ function modal(title, body) {
   $("#dlgbody").innerHTML = body;
   const dialog = $("#dialog");
   if (!dialog.open) dialog.showModal();
+}
+function deletionDialog(kind,id) {
+  const jobs=kind==="jobs";
+  const label=jobs ? "依頼" : "手順";
+  const entries=jobs ? workspace.jobs.map(j=>({id:j.id,name:j.ask})) :
+    catalogEntries().filter(item=>item.key.startsWith("personal:"));
+  const prefix=jobs ? "job/" : "catalog/personal:";
+  const container=jobs ? "#jobResults" : "#catalogResults";
+  const visible=new Set(Array.from(document.querySelectorAll(container+' [data-op^="'+prefix+'"]'),
+    row=>row.dataset.op.slice(prefix.length)));
+  const choices=entries.filter(item=>id ? item.id===id : visible.has(item.id));
+  if (!choices.length) return;
+  const list=id ? '<p>'+esc(choices[0].name)+'</p>' : '<fieldset><legend>削除する'+label+'を選択</legend>'+
+    choices.map(item=>'<label><input type="checkbox" value="'+esc(item.id)+'"> '+esc(item.name)+'</label>').join("")+'</fieldset>';
+  modal(label+'を削除','<form id="deleteItems">'+list+'<p>削除すると元に戻せません。'+
+    (jobs ? '開始前の予約も取り消されます。' : '')+'</p><p role="alert" class="form-error"></p>'+
+    '<div class="actions"><button type="button" class="secondary" autofocus>キャンセル</button>'+
+    '<button type="submit" class="primary"'+(id ? '' : ' disabled')+'>'+ (id ? '削除する' : '選択した項目を削除')+'</button></div></form>');
+  const form=$("#deleteItems"),cancel=form.querySelector('[type="button"]'),submit=form.querySelector('[type="submit"]');
+  const selected=()=>id ? [id] : Array.from(form.querySelectorAll("input:checked"),input=>input.value);
+  cancel.focus();
+  cancel.onclick=()=>$("#dialog").close();
+  form.onchange=()=>{
+    const count=selected().length;
+    submit.disabled=!count;
+    submit.textContent=count ? count+"件を削除する" : "選択した項目を削除";
+  };
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    if (submit.disabled) return;
+    const ids=selected();
+    const fieldset=form.querySelector("fieldset");
+    if (fieldset) fieldset.disabled=true;
+    submit.disabled=true;
+    try {
+      const result=await api(jobs ? "/api/jobs/delete" : "/api/personal-procedures/delete",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ids})});
+      if (form.isConnected) $("#dialog").close();
+      if (jobs && id && route().startsWith("job/")) go("jobs");
+      else await reload();
+      notice(result.deleted+"件の"+label+"を削除しました。");
+    } catch (error) {
+      if (fieldset) fieldset.disabled=false;
+      form.querySelector('[role="alert"]').textContent=error.message;
+      submit.disabled=false;
+    }
+  };
 }
 document.addEventListener("change", event => {
   if (event.target.id==="catalogFavorites") {
@@ -1622,6 +1674,11 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-op]");
   if (!b) return;
   const op = b.dataset.op;
+  if (op.startsWith("delete-picker/") || op.startsWith("delete-one/")) {
+    const [,kind,id]=op.split("/");
+    deletionDialog(kind,id);
+    return;
+  }
   if (op.startsWith("request-filter/")) {
     requestListFilter = op.split("/")[1];
     if (!$("#jobSearch")) return;

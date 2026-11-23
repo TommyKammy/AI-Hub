@@ -382,6 +382,8 @@ function listen(entry, port) {
       const draft = path.match(/^\/api\/request-drafts\/([a-f0-9-]{36})$/);
       if (draft && req.method === "GET") return json(personal.readDraft(actor,draft[1]));
       if (draft && req.method === "POST") return json(personal.saveDraft(actor,draft[1],await body(req,128*1024)));
+      if (req.method==="POST" && (path==="/api/jobs/delete" || path==="/api/personal-procedures/delete"))
+        return json(personal.deleteItems(actor,path==="/api/jobs/delete" ? "jobs" : "procedures",(await body(req,128*1024))?.ids));
       if (req.method === "POST" && path === "/api/templates") return json(personal.saveTemplate(actor, await body(req)),201);
       if (req.method === "POST" && path === "/api/procedure-favorites") return json(personal.favorite(actor,await body(req)));
       if (req.method === "POST" && path === "/api/schedules") return json(personal.schedule(actor, await body(req)),201);

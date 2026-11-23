@@ -12,7 +12,7 @@ export function catalogProcedureReference(input) {
   return {key:input.key,version:input.version};
 }
 
-export function resolveAppliedProcedure(db,actor,reference) {
+export function resolveAppliedProcedure(db,actor,reference,includeDeleted=false) {
   const {key,version}=catalogProcedureReference(reference);
   const member=activeMember(db,actor);
   const [provider,id]=key.split(":");
@@ -36,7 +36,7 @@ export function resolveAppliedProcedure(db,actor,reference) {
         kind:item.kind,workflow:item.standard_workflow,standardHash:item.standard_hash,instruction:item.ask,output:item.output_format};
     } else {
       const quote=db.prepare(`SELECT s.id,s.hash,s.criteria FROM quote_skills s JOIN jobs j ON j.id=s.job
-        WHERE s.id=? AND j.actor=? AND j.id IN (SELECT id FROM permitted_job_teams) AND s.hash IS NOT NULL`).get(id,actor);
+        WHERE (? OR s.id NOT IN (SELECT skill FROM deleted_quote_skills)) AND s.id=? AND j.actor=? AND j.id IN (SELECT id FROM permitted_job_teams) AND s.hash IS NOT NULL`).get(Number(includeDeleted),id,actor);
       if (!quote) throw new HubError(404,"個人手順が見つかりません。");
       resolved={name:"自分の見積比較",version:1,hash:quote.hash,kind:"assistant",workflow:"quote-comparison",quoteSkill:quote};
     }
@@ -49,5 +49,5 @@ export function resolveAppliedProcedure(db,actor,reference) {
 export function requireRevisionProcedure(db,actor,job,phase) {
   if (!phase.startsWith("revise-")) return null;
   const row=db.prepare("SELECT applied_procedure FROM memo_versions WHERE job_id=? AND version=?").get(job,Number(phase.slice(7)));
-  return row?.applied_procedure ? resolveAppliedProcedure(db,actor,JSON.parse(row.applied_procedure)) : null;
+  return row?.applied_procedure ? resolveAppliedProcedure(db,actor,JSON.parse(row.applied_procedure),true) : null;
 }
